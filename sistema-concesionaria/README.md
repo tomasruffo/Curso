@@ -7,6 +7,7 @@ Documento de diseño **v0.2**: lógica de negocio, arquitectura, seguridad, alta
 | `README.md` | Este documento: cómo funciona el sistema y por qué está diseñado así |
 | [`ETAPAS.md`](ETAPAS.md) | **Etapa 1** (digitalización, carga manual, facturación manual asistida) y **etapa 2** (WhatsApp, facturación automática, stock inteligente) |
 | [`SEGURIDAD.md`](SEGURIDAD.md) | Ingreso ultra seguro (passkeys por rol), datos sensibles cifrados, quién ve qué, recuperación de cuentas |
+| [`INFRA-GCP.md`](INFRA-GCP.md) | Cómo se arma en Google Cloud y la configuración segura (proyectos, políticas, red, claves, auditoría) |
 | [`PLAN-B.md`](PLAN-B.md) | Plan de emergencia por niveles (hotspot, celular, papel), para imprimir y tener en el taller |
 | [`schema.sql`](schema.sql) | Modelo de datos en PostgreSQL con las reglas de negocio aplicadas en la base |
 | [`pruebas_schema.sql`](pruebas_schema.sql) | 73 pruebas que verifican esas reglas (`psql -f schema.sql -f pruebas_schema.sql`) |
@@ -306,13 +307,15 @@ flowchart TB
 
 ### Stack recomendado (aburrido a propósito)
 
+**Nube: Google Cloud**, región São Paulo con respaldo en Santiago. El detalle de cada servicio y la configuración segura está en [`INFRA-GCP.md`](INFRA-GCP.md).
+
 | Componente | Recomendación | Por qué |
 |---|---|---|
-| Base de datos | **PostgreSQL gestionado con HA** (RDS Multi-AZ, Cloud SQL HA o Azure Flexible con redundancia de zona), **región São Paulo** | Las reglas viven en la base ([`schema.sql`](schema.sql)), failover automático y backups punto-en-el-tiempo |
-| API | Node.js (NestJS) o Python (FastAPI), **sin estado**, en contenedores con ≥ 2 instancias | Si cae una, la otra atiende |
+| Base de datos | **Cloud SQL para PostgreSQL** en alta disponibilidad, región São Paulo, réplica en Santiago (el esquema ya se probó sin superusuario, como corre en Cloud SQL) | Las reglas viven en la base ([`schema.sql`](schema.sql)), failover automático y backups punto-en-el-tiempo |
+| API | Node.js (NestJS) o Python (FastAPI), **sin estado**, en **Cloud Run** con ≥ 2 instancias | Si cae una, la otra atiende |
 | Back-office | Web (React) con un componente de calendario (ej. FullCalendar) | Arrastrar y soltar turnos |
 | Tablets | **La misma web** instalada como app (PWA), responsive | Una sola base de código; funciona igual en un celular (plan de emergencia) |
-| Archivos | Object storage S3-compatible con **versionado y bloqueo de objetos** para actas | Las actas no se pueden borrar ni pisar |
+| Archivos | **Cloud Storage** con **versionado y retención bloqueada** para actas y facturas | Las actas no se pueden borrar ni pisar |
 | Tiempo real | WebSocket/SSE + recarga cada 60 s de respaldo | Dos caminos para que el aviso llegue |
 | PDF | Generado en un worker desde el mismo JSON canónico que firmó el cliente | Lo que se firmó es lo que se imprime |
 | Monitoreo | Chequeo externo de disponibilidad + logs + alertas a WhatsApp/email del responsable | Enterarse antes que el taller |

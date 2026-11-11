@@ -110,11 +110,13 @@ Nombres, patentes y **bloques cifrados que no sirven sin el KMS**. Al KMS sólo 
 
 - **Tablets y celulares de la empresa**: enrolados en el MDM, en modo kiosco, con la clave del equipo guardada en el **hardware** (Android Keystore). Bloqueo con PIN de 6 dígitos y borrado remoto. Sin enrolar, la API no los acepta.
 - **PCs de Administración y Admin**: equipos de la empresa, con disco cifrado, actualizaciones automáticas, usuarios sin permisos de administrador local y el navegador al día.
-- **Opcional (recomendado para Administración):** que el panel de administración sólo se pueda abrir desde **equipos gestionados por la empresa**, con un proxy de acceso por identidad (Cloudflare Access, Google BeyondCorp o similar).
+- **Opcional (recomendado para Administración):** que el panel de administración sólo se pueda abrir desde **equipos gestionados por la empresa**, con un proxy de acceso por identidad (en GCP: **Identity-Aware Proxy**, ver [INFRA-GCP.md](INFRA-GCP.md)).
 
 ---
 
 ## 6. Infraestructura
+
+Cómo se aplica todo esto en Google Cloud, con las políticas que impiden errores de configuración: [INFRA-GCP.md](INFRA-GCP.md).
 
 - **La base de datos no es accesible desde internet**: está en una red privada y sólo la API llega a ella.
 - **Cuenta de la nube**: quienes la administran entran con **llave física**; **nadie usa la cuenta raíz**; permisos mínimos; registro de auditoría de la nube activado.
