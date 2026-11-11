@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Órbita · Stock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Barlow+Condensed:wght@600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#050607;--surface:rgba(255,255,255,.035);--surface-2:rgba(255,255,255,.065);
+  --line:rgba(255,255,255,.08);--line-2:rgba(255,255,255,.14);
+  --text:#f5f5f7;--text-2:rgba(245,245,247,.64);--text-3:rgba(245,245,247,.40);
+  --accent:#5ac8fa;--accent-2:#0a84ff;--glow:rgba(90,200,250,.35);
+  --ok:#30d158;--warn:#ffd60a;--bad:#ff453a;--violet:#bf5af2;
+  --r:16px;--r-lg:24px;--r-xl:32px;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter","Segoe UI",system-ui,sans-serif;
+  --ease:cubic-bezier(.2,.7,.2,1);
+}
+html{color-scheme:dark;background:var(--bg)}
+body{font-family:var(--font);background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;line-height:1.45;min-height:100vh;overflow-x:hidden;letter-spacing:-.006em}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background:
+  radial-gradient(1100px 620px at 78% -10%,rgba(90,200,250,.12),transparent 62%),
+  radial-gradient(900px 520px at -8% 108%,rgba(120,90,255,.075),transparent 60%)}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(255,255,255,.022) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.022) 1px,transparent 1px);
+  background-size:56px 56px;-webkit-mask-image:radial-gradient(ellipse 85% 60% at 50% 0%,#000 25%,transparent 80%);mask-image:radial-gradient(ellipse 85% 60% at 50% 0%,#000 25%,transparent 80%)}
+body>*{position:relative;z-index:1}
+a{color:inherit;text-decoration:none}
+button,input,textarea,select{font:inherit;color:inherit}
+.num{font-variant-numeric:tabular-nums}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--text-3)}
+.muted{color:var(--text-2)}.dim{color:var(--text-3)}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic.sm{width:16px;height:16px}.ic.xs{width:13px;height:13px}.ic.lg{width:28px;height:28px}
+.grad{background:linear-gradient(90deg,#fff 0%,#bfe9ff 55%,#5ac8fa 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* ---------- shell ---------- */
+.app{display:grid;grid-template-columns:252px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px;padding:22px 14px 16px;border-right:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.028),rgba(255,255,255,.006));backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+.brand{display:flex;align-items:center;gap:13px;padding:4px 10px 24px}
+.brand b{display:block;font-weight:700;letter-spacing:.34em;font-size:13px}
+.brand small{display:block;font-size:11px;color:var(--text-3);letter-spacing:.02em;margin-top:3px}
+.orb{width:30px;height:30px;flex:none;border-radius:50%;position:relative;border:1.5px solid rgba(255,255,255,.8);box-shadow:0 0 22px var(--glow),inset 0 0 12px rgba(90,200,250,.25)}
+.orb::before{content:"";position:absolute;inset:6px;border-radius:50%;border:1px solid rgba(255,255,255,.25)}
+.orb::after{content:"";position:absolute;width:7px;height:7px;border-radius:50%;background:var(--accent);top:-4px;left:50%;margin-left:-3.5px;box-shadow:0 0 12px var(--accent);animation:orbit 9s linear infinite;transform-origin:3.5px 18.5px}
+@keyframes orbit{to{transform:rotate(360deg)}}
+.side nav{display:flex;flex-direction:column;gap:2px}
+.nav{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;color:var(--text-2);font-size:14px;font-weight:500;transition:background .25s,color .25s}
+.nav:hover{background:var(--surface-2);color:var(--text)}
+.nav.on{background:linear-gradient(90deg,rgba(90,200,250,.17),rgba(90,200,250,.03));color:var(--text);box-shadow:inset 0 0 0 1px rgba(90,200,250,.22)}
+.nav.on .ic{color:var(--accent);filter:drop-shadow(0 0 6px rgba(90,200,250,.6))}
+.nav .badge{margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:99px;display:grid;place-items:center;font-size:11px;font-weight:600;background:var(--accent);color:#001521}
+.nav .pip{margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--warn);box-shadow:0 0 8px var(--warn)}
+.side-sec{margin:20px 12px 6px}
+.me{margin-top:auto;display:flex;align-items:center;gap:11px;padding:12px;border-radius:18px;background:var(--surface);border:1px solid var(--line)}
+.av{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:600;letter-spacing:.02em;background:linear-gradient(140deg,#43464e,#15171b);border:1px solid var(--line-2)}
+.me b{display:block;font-size:13px;font-weight:600}.me small{display:block;font-size:11px;color:var(--text-3)}
+.me .ic{margin-left:auto;color:var(--ok)}
+.main{padding:28px 36px 56px;min-width:0}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:26px}
+.top h1{font-size:34px;font-weight:600;letter-spacing:-.035em;line-height:1.08;margin-top:7px}
+.top-r{display:flex;align-items:center;gap:10px}
+.search{display:flex;align-items:center;gap:10px;width:330px;height:42px;padding:0 14px;border-radius:14px;background:var(--surface);border:1px solid var(--line);color:var(--text-3)}
+.search input{flex:1;min-width:0;background:none;border:0;outline:0;font-size:14px;color:var(--text)}
+.search input::placeholder{color:var(--text-3)}
+kbd{font:500 11px var(--font);padding:3px 6px;border-radius:6px;border:1px solid var(--line-2);color:var(--text-3)}
+.icon-btn{position:relative;width:42px;height:42px;display:grid;place-items:center;border-radius:14px;background:var(--surface);border:1px solid var(--line);cursor:pointer;color:var(--text-2);transition:color .2s,background .2s}
+.icon-btn:hover{color:var(--text);background:var(--surface-2)}
+.icon-btn .dot{position:absolute;top:10px;right:11px;width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+
+/* ---------- surfaces ---------- */
+.card{position:relative;border-radius:var(--r-lg);background:linear-gradient(180deg,rgba(255,255,255,.056),rgba(255,255,255,.016));border:1px solid var(--line);box-shadow:inset 0 1px 0 rgba(255,255,255,.065),0 40px 80px -42px rgba(0,0,0,.75);padding:22px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);min-width:0}
+.card.glow{border-color:rgba(90,200,250,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 0 1px rgba(90,200,250,.06),0 30px 90px -40px rgba(90,200,250,.45)}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.card-h h2,.h2{font-size:15.5px;font-weight:600;letter-spacing:-.012em}
+.link{font-size:13px;color:var(--accent);display:inline-flex;align-items:center;gap:4px}
+.grid{display:grid;gap:18px}
+.row{display:flex;align-items:center;gap:12px}
+.sep{height:1px;background:var(--line);margin:16px 0}
+.spacer{flex:1}
+
+/* ---------- chips & buttons ---------- */
+.chip{display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 11px;border-radius:999px;font-size:12px;font-weight:500;background:var(--surface-2);border:1px solid var(--line);color:var(--text-2);white-space:nowrap}
+.chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.chip.plain::before{display:none}
+.chip.ok{color:var(--ok);background:rgba(48,209,88,.08);border-color:rgba(48,209,88,.22)}
+.chip.warn{color:var(--warn);background:rgba(255,214,10,.07);border-color:rgba(255,214,10,.22)}
+.chip.bad{color:var(--bad);background:rgba(255,69,58,.08);border-color:rgba(255,69,58,.25)}
+.chip.info{color:var(--accent);background:rgba(90,200,250,.08);border-color:rgba(90,200,250,.25)}
+.chip.violet{color:#d59bff;background:rgba(191,90,242,.09);border-color:rgba(191,90,242,.28)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:42px;padding:0 19px;border-radius:999px;font-size:14px;font-weight:600;letter-spacing:-.01em;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);cursor:pointer;transition:transform .15s var(--ease),background .25s,box-shadow .25s,opacity .25s;white-space:nowrap}
+.btn:hover{background:rgba(255,255,255,.11)}
+.btn:active{transform:scale(.975)}
+.btn.primary{background:linear-gradient(180deg,#fff,#dedee3);color:#050607;border-color:transparent;box-shadow:0 12px 34px -12px rgba(255,255,255,.42)}
+.btn.primary:hover{background:#fff}
+.btn.accent{background:linear-gradient(180deg,#7bd6ff,#2b9cff);color:#00111c;border-color:transparent;box-shadow:0 12px 34px -12px rgba(90,200,250,.75)}
+.btn.ghost{background:transparent}
+.btn.danger{color:#ff7b72}
+.btn.lg{height:54px;padding:0 28px;font-size:15.5px}
+.btn.sm{height:34px;padding:0 14px;font-size:13px}
+.btn[disabled],.btn.off{opacity:.35;pointer-events:none}
+
+/* ---------- patente Mercosur (estilizada) ---------- */
+.plate{display:inline-flex;flex-direction:column;align-items:stretch;background:linear-gradient(180deg,#fbfbfd,#e6e7ea);border-radius:6px;border:1.5px solid #0b0b0c;box-shadow:0 0 0 1px rgba(255,255,255,.25),0 10px 26px -10px rgba(0,0,0,.7);overflow:hidden;flex:none;vertical-align:middle}
+.plate i{display:block;background:linear-gradient(180deg,#2457c5,#163f99);color:#fff;font:600 6.5px/1 var(--font);letter-spacing:.2em;text-align:center;padding:3px 6px;font-style:normal}
+.plate b{font-family:"Barlow Condensed","Arial Narrow",var(--font);font-weight:600;font-size:25px;line-height:1.08;letter-spacing:.08em;color:#101012;text-align:center;padding:1px 11px 2px}
+.plate.sm i{font-size:4.5px;padding:2px 4px}.plate.sm b{font-size:15px;padding:0 7px 1px}
+.plate.lg i{font-size:9px;padding:4px 8px}.plate.lg b{font-size:40px;padding:1px 18px 3px}
+.vin{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;letter-spacing:.06em;color:var(--text-2);padding:4px 8px;border-radius:7px;border:1px dashed var(--line-2)}
+
+/* ---------- datos ---------- */
+.kpi .v{font-size:34px;font-weight:600;letter-spacing:-.035em;margin-top:12px;line-height:1}
+.kpi .d{font-size:12.5px;margin-top:10px;color:var(--text-2)}
+.up{color:var(--ok)}
+.bar{height:6px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent-2),var(--accent))}
+table.t{width:100%;border-collapse:collapse;font-size:13.5px}
+.t th{text-align:left;font-size:10.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--text-3);padding:0 12px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+.t td{padding:13px 12px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle}
+.t tbody tr{transition:background .2s}
+.t tbody tr:hover{background:rgba(255,255,255,.025)}
+.t tr:last-child td{border-bottom:0}
+.r{text-align:right}
+.live{width:8px;height:8px;flex:none;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px rgba(48,209,88,.16),0 0 12px var(--ok);animation:pulse 2.2s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 8px rgba(48,209,88,0),0 0 12px var(--ok)}}
+.seg{display:inline-flex;padding:3px;border-radius:12px;background:var(--surface);border:1px solid var(--line)}
+.seg button{border:0;background:none;height:30px;padding:0 13px;border-radius:9px;font-size:13px;font-weight:500;color:var(--text-2);cursor:pointer}
+.seg button.on{background:rgba(255,255,255,.1);color:var(--text);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+
+/* ---------- auto (SVG) ---------- */
+.car{display:block;width:100%;height:auto;overflow:visible}
+.car .ln{fill:none;stroke-linecap:round;stroke-linejoin:round}
+.car .draw{stroke-dasharray:1900;stroke-dashoffset:1900;animation:draw 2.8s cubic-bezier(.65,0,.35,1) .2s forwards}
+.car .fade{opacity:0;animation:fadein 1.2s ease 1.8s forwards}
+.car .lamp{filter:drop-shadow(0 0 6px #fff)}
+.car .tail{filter:drop-shadow(0 0 6px #ff453a)}
+.car .scan{animation:scan 5s ease-in-out 2.6s infinite}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes fadein{to{opacity:1}}
+@keyframes scan{0%,100%{transform:translateX(0);opacity:0}10%{opacity:.9}50%{transform:translateX(470px);opacity:.9}60%,99%{opacity:0}}
+
+/* ---------- dispositivo (tablet) ---------- */
+.stage{min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:30px;padding:44px 16px 60px}
+.caption{text-align:center;max-width:720px}
+.caption h1{font-size:40px;font-weight:600;letter-spacing:-.04em;margin:10px 0 8px;line-height:1.05}
+.caption p{color:var(--text-2);font-size:16px}
+.fit{width:100%;display:flex;justify-content:center;align-items:flex-start}
+.device{flex:none;border-radius:48px;padding:16px;background:linear-gradient(150deg,#3a3c41 0%,#111214 35%,#1c1d20 70%,#2c2e32 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),0 0 0 1px #000,0 90px 150px -60px rgba(0,0,0,.95),0 0 140px -50px rgba(90,200,250,.3);transform-origin:top center}
+.screen{width:1194px;height:834px;border-radius:33px;overflow:hidden;background:#050607;position:relative;isolation:isolate}
+.screen::before{content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(900px 500px at 80% -10%,rgba(90,200,250,.11),transparent 60%),radial-gradient(700px 400px at 0% 110%,rgba(120,90,255,.07),transparent 60%)}
+.statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 26px;font-size:13px;font-weight:600}
+
+/* ---------- entrada ---------- */
+.reveal{opacity:0;transform:translateY(12px);animation:in .8s var(--ease) forwards}
+.d1{animation-delay:.06s}.d2{animation-delay:.12s}.d3{animation-delay:.18s}.d4{animation-delay:.24s}.d5{animation-delay:.3s}.d6{animation-delay:.36s}
+@keyframes in{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.reveal{opacity:1;transform:none}.car .draw{stroke-dashoffset:0}.car .fade{opacity:1}}
+@media (max-width:1100px){.app{grid-template-columns:1fr}.side{display:none}.main{padding:20px 16px 40px}.search{display:none}.top h1{font-size:28px}}
+@media (max-width:600px){.kpis{grid-template-columns:1fr!important}.kpi .v{font-size:30px}.spark{display:none}.top h1{font-size:26px}}
+
+/* ---------- pantalla ---------- */
+.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+.g-main{grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);margin-top:18px;align-items:start}
+.chart-h{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.chart-h h2{font-size:22px;font-weight:600;letter-spacing:-.03em;margin-top:6px}
+.chart-h .row{gap:8px}
+.big3{display:grid;grid-template-columns:repeat(4,auto);gap:30px;margin:18px 0 6px;justify-content:start}
+.big3 small{display:block;font-size:11px;color:var(--text-3);letter-spacing:.08em;text-transform:uppercase}
+.big3 b{font-size:26px;font-weight:600;letter-spacing:-.03em}
+#chart{width:100%;height:auto;display:block;margin-top:10px;overflow:visible}
+.leg{display:flex;gap:18px;font-size:12px;color:var(--text-2);margin-top:6px;flex-wrap:wrap}
+.leg span{display:inline-flex;align-items:center;gap:7px}
+.leg i{width:16px;height:2px;border-radius:2px;display:inline-block}
+.prop{padding:24px}
+.prop .who{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-3)}
+.prop .who .ic{color:#d59bff}
+.prop h3{font-size:22px;font-weight:600;letter-spacing:-.03em;margin:10px 0 4px}
+.lines{margin:16px 0;border-top:1px solid var(--line)}
+.lines div{display:grid;grid-template-columns:1fr auto auto;gap:14px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13.5px;align-items:center}
+.lines small{color:var(--text-3);font-size:12px}
+.why{font-size:13.5px;line-height:1.6;color:var(--text-2);padding:14px 16px;border-radius:16px;background:rgba(191,90,242,.06);border:1px solid rgba(191,90,242,.2)}
+.why b{color:var(--text);font-weight:600}
+.used{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
+.used span{font-size:11.5px;padding:4px 9px;border-radius:99px;border:1px solid var(--line-2);color:var(--text-2);display:inline-flex;align-items:center;gap:5px}
+.prop .acts{display:grid;grid-template-columns:1.5fr 1fr;gap:8px;margin-top:18px}
+.prop .fine{font-size:11.5px;color:var(--text-3);margin-top:12px;display:flex;gap:8px;line-height:1.45}
+.inv{margin-top:18px}
+.inv .card-h{margin-bottom:10px}
+.sku{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--text-3)}
+.mini{width:110px}
+.mini .bar{height:5px}
+.mini small{display:block;font-size:11px;color:var(--text-3);margin-top:5px}
+.bar i.w{background:linear-gradient(90deg,#a67c00,var(--warn))}
+.bar i.b{background:linear-gradient(90deg,#8a1c15,var(--bad))}
+@media (max-width:1280px){.kpis{grid-template-columns:repeat(2,1fr)}.g-main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></symbol><symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol><symbol id="i-car" viewBox="0 0 24 24"><path d="M3.2 15.6v-2.4c0-.7.4-1.3 1-1.6l2.3-1.1 2-3.1c.4-.6 1-.9 1.7-.9h4.4c.6 0 1.2.3 1.6.8l2.6 3.2 1.9.5c.9.2 1.5 1 1.5 1.9v2.5c0 .4-.3.8-.8.8h-.8M5.9 16.4H4M14.8 16.4h-4.4"/><circle cx="8.3" cy="16.4" r="2"/><circle cx="17" cy="16.4" r="2"/></symbol><symbol id="i-chat" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 0 1-12.4 7.6l-4.6 1 1-4.4A8.5 8.5 0 1 1 20.5 12z"/></symbol><symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></symbol><symbol id="i-doc" viewBox="0 0 24 24"><path d="M6.5 3.5h8l3.5 3.5v13.5h-11.5z"/><path d="M14.5 3.5V7H18M9.5 11.5h5M9.5 15h5"/></symbol><symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.2 19 6v5.6c0 4.3-2.9 7.6-7 9.2-4.1-1.6-7-4.9-7-9.2V6l7-2.8z"/><path d="m9 12 2.1 2.1L15.2 10"/></symbol><symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol><symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol><symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol><symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8.5h3.2L9 6h6l1.8 2.5H20v10H4z"/><circle cx="12" cy="13.2" r="3.4"/></symbol><symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol><symbol id="i-flag" viewBox="0 0 24 24"><path d="M5.5 21V4M5.5 4h11l-2 4 2 4h-11"/></symbol><symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8.5-8.5M16 7l2.5 2.5M14 9l2 2"/></symbol><symbol id="i-face" viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9.5v1M15 9.5v1M12 9.5v3.5h-1M9.5 15.5c1.4 1.2 3.6 1.2 5 0"/></symbol><symbol id="i-wifi" viewBox="0 0 24 24"><path d="M3.5 9.5a12 12 0 0 1 17 0M6.5 12.7a7.6 7.6 0 0 1 11 0M9.5 15.8a3.2 3.2 0 0 1 5 0"/><path d="M12 19h.01"/></symbol><symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol><symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.5c.5 3.9 2.6 6 6.5 6.5-3.9.5-6 2.6-6.5 6.5-.5-3.9-2.6-6-6.5-6.5 3.9-.5 6-2.6 6.5-6.5z"/><path d="M18.5 15.5c.2 1.6 1 2.4 2.5 2.5-1.5.2-2.3 1-2.5 2.5-.2-1.5-1-2.3-2.5-2.5 1.5-.1 2.3-.9 2.5-2.5z"/></symbol><symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol><symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol><symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></symbol><symbol id="i-signal" viewBox="0 0 24 24"><path d="M5 19v-3M10 19v-6M15 19v-9M20 19V5"/></symbol><symbol id="i-tablet" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M10.5 18h3"/></symbol><symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2.8"/><path d="M10.5 18.5h3"/></symbol><symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20.5c1.3-3.6 4.2-5.4 7.5-5.4s6.2 1.8 7.5 5.4"/></symbol><symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol><symbol id="i-chevl" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol><symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol><symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/></symbol><symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.5V4M7 9l5-5 5 5M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></symbol><symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-3-7-7-1z"/></symbol><symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10a4 4 0 0 0 .6-8A6 6 0 0 0 6 11.5a3.5 3.5 0 0 0 1 7z"/></symbol><symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8"/></symbol><symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16M20 20v-4h-4"/></symbol><symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="m4 17 5-5 4 4 3-3 4 4"/></symbol><symbol id="i-battery" viewBox="0 0 24 24"><rect x="3" y="7.5" width="16" height="9" rx="2.5"/><path d="M21 10.5v3"/></symbol><symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol><symbol id="i-tool" viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.3 5L4 16.7 7.3 20l5.2-5.2a4 4 0 0 0 5-5.3l-2.4 2.4-2.6-.7-.7-2.6 2.7-2.1z"/></symbol><symbol id="i-map" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></symbol></svg>
+<div class="app">
+<aside class="side"><a class="brand" href="index.html"><span class="orb"></span><span><b>ÓRBITA</b><small>Instalaciones · Concesionaria</small></span></a><nav><a class="nav" href="02-tablero.html"><svg class="ic"><use href="#i-grid"/></svg>Tablero</a><a class="nav" href="03-agenda.html"><svg class="ic"><use href="#i-calendar"/></svg>Agenda</a><a class="nav" href="04-orden.html"><svg class="ic"><use href="#i-car"/></svg>Órdenes</a><a class="nav" href="07-whatsapp.html"><svg class="ic"><use href="#i-chat"/></svg>WhatsApp<span class="badge">3</span></a><a class="nav on" href="08-stock.html"><svg class="ic"><use href="#i-box"/></svg>Stock<span class="pip"></span></a><a class="nav" href="09-facturacion.html"><svg class="ic"><use href="#i-doc"/></svg>Facturación</a><a class="nav" href="10-centro-control.html"><svg class="ic"><use href="#i-shield"/></svg>Centro de control</a></nav><div class="side-sec eyebrow">En el taller</div><nav><a class="nav" href="05-tablet-operario.html"><svg class="ic"><use href="#i-tablet"/></svg>Tablet del operario</a><a class="nav" href="06-tablet-firma.html"><svg class="ic"><use href="#i-pen"/></svg>Tablet de firma</a></nav><div class="me"><span class="av">CR</span><span><b>Carolina Ruiz</b><small>Coordinación</small></span><svg class="ic sm" title="Passkey activa"><use href="#i-lock"/></svg></div></aside>
+<main class="main">
+<header class="top reveal"><div><div class="eyebrow">Etapa 2 · Gestión inteligente</div><h1>Stock</h1></div><div class="top-r"><label class="search"><svg class="ic sm"><use href="#i-search"/></svg><input placeholder="Buscar patente, cliente u orden"><kbd>⌘K</kbd></label><button class="icon-btn" aria-label="Avisos"><svg class="ic"><use href="#i-bell"/></svg><i class="dot"></i></button></div></header>
+
+<section class="grid kpis">
+  <article class="card kpi reveal d1"><div class="eyebrow">Valor en depósito</div><div class="v num">$ 38,4 M</div><div class="d">142 unidades · 18 artículos</div></article>
+  <article class="card kpi reveal d2"><div class="eyebrow">Artículos en riesgo</div><div class="v num" style="color:var(--warn)">3</div><div class="d">Por debajo del punto de pedido</div></article>
+  <article class="card kpi reveal d3"><div class="eyebrow">Compras en camino</div><div class="v num">2</div><div class="d">Llegan el 13 y el 17</div></article>
+  <article class="card kpi reveal d4"><div class="eyebrow">Diferencias a revisar</div><div class="v num" style="color:var(--bad)">1</div><div class="d">Dashcam: se usó 1 más de lo esperado</div></article>
+</section>
+
+<section class="grid g-main">
+  <article class="card reveal d2">
+    <div class="chart-h">
+      <div><div class="eyebrow">Alarma X-200 · ALR-X200</div><h2>Disponible para trabajos nuevos</h2></div>
+      <div class="row"><div class="seg"><button>7 días</button><button class="on">14 días</button><button>30 días</button></div></div>
+    </div>
+    <div class="big3 num">
+      <div><small>En depósito</small><b>14</b></div>
+      <div><small>Reservadas por la agenda</small><b>12</b></div>
+      <div><small>Libres</small><b style="color:var(--warn)">2</b></div>
+      <div><small>Punto de pedido</small><b>6</b></div>
+    </div>
+    <svg id="chart" viewBox="0 0 760 300" aria-label="Proyección de stock"></svg>
+    <div class="leg"><span><i style="background:var(--accent)"></i>Si se aprueba la compra</span><span><i style="background:var(--bad)"></i>Si no se compra</span><span><i style="background:repeating-linear-gradient(90deg,var(--warn) 0 4px,transparent 4px 7px)"></i>Punto de pedido</span><span><i style="background:rgba(255,255,255,.3);height:8px;width:8px;border-radius:2px"></i>Pedidos nuevos estimados por día</span></div>
+  </article>
+
+  <article class="card prop glow reveal d3">
+    <div class="who"><svg class="ic sm"><use href="#i-spark"/></svg>Agente de reposición · hoy 02:00<span class="spacer"></span><span class="chip warn">Vence en 2 d 21 h</span></div>
+    <h3>Compra sugerida · Alarmas SRL</h3>
+    <div class="dim" style="font-size:13px">Demora 5 días hábiles · mínimo de compra $ 500.000</div>
+    <div class="lines num">
+      <div><span>Alarma X-200 <small>· ALR-X200</small></span><span>15 u.</span><span>$ 1.275.000</span></div>
+      <div><span>Sensor volumétrico <small>· SNS-VOL</small></span><span>10 u.</span><span>$ 409.000</span></div>
+      <div style="font-weight:600"><span>Total sin IVA</span><span></span><span>$ 1.684.000</span></div>
+    </div>
+    <div class="why"><b>Por qué:</b> hay 14 en depósito, pero <b>12 ya están reservadas</b> para instalaciones agendadas: quedan 2 libres. Entran unos 5 pedidos nuevos por semana, así que <b>desde el viernes 13 no habría</b> para trabajos nuevos. Pedido hoy, llega el <b>miércoles 18</b>. Sumé los sensores, que también están bajo el punto de pedido, para llegar al mínimo sin costo de envío.</div>
+    <div class="used"><span><svg class="ic xs"><use href="#i-box"/></svg>Stock ALR-X200 y SNS-VOL</span><span><svg class="ic xs"><use href="#i-calendar"/></svg>Agenda 12 al 25</span><span><svg class="ic xs"><use href="#i-refresh"/></svg>Consumo 8 semanas</span><span><svg class="ic xs"><use href="#i-doc"/></svg>Condiciones del proveedor</span></div>
+    <div class="acts"><button class="btn primary"><svg class="ic sm"><use href="#i-face"/></svg>Aprobar con passkey</button><button class="btn danger">Rechazar</button></div>
+    <div class="fine"><svg class="ic sm" style="color:var(--accent)"><use href="#i-shield"/></svg><span>Sólo Administración puede aprobarla. Al aprobar, la orden de compra se crea a tu nombre. El agente no compra ni toca el stock.</span></div>
+  </article>
+</section>
+
+<article class="card inv reveal d4">
+  <div class="card-h"><h2>Inventario</h2><div class="row"><div class="seg"><button class="on">Todos</button><button>En riesgo · 3</button><button>En camino · 2</button></div><button class="btn sm"><svg class="ic sm"><use href="#i-upload"/></svg>Cargar remito</button></div></div>
+  <table class="t">
+    <thead><tr><th>Artículo</th><th class="r">Depósito</th><th class="r">Reservado</th><th>Libre</th><th class="r">Punto de pedido</th><th>Estado</th></tr></thead>
+    <tbody class="num">
+      <tr><td>Alarma X-200<div class="sku">ALR-X200</div></td><td class="r">14</td><td class="r">12</td><td><div class="mini"><div class="bar"><i class="w" style="width:14%"></i></div><small>2 libres</small></div></td><td class="r">6</td><td><span class="chip warn">Pedir · propuesta lista</span></td></tr>
+      <tr><td>Sensor volumétrico<div class="sku">SNS-VOL</div></td><td class="r">9</td><td class="r">5</td><td><div class="mini"><div class="bar"><i class="w" style="width:44%"></i></div><small>4 libres</small></div></td><td class="r">6</td><td><span class="chip warn">Pedir · propuesta lista</span></td></tr>
+      <tr><td>Kit sensores de estacionamiento<div class="sku">SEN-EST4</div></td><td class="r">2</td><td class="r">2</td><td><div class="mini"><div class="bar"><i class="b" style="width:3%"></i></div><small>0 libres</small></div></td><td class="r">4</td><td><span class="chip bad">Sin disponible</span></td></tr>
+      <tr><td>Film PPF 1,52 m<div class="sku">PPF-152 · rollo</div></td><td class="r">3</td><td class="r">1</td><td><div class="mini"><div class="bar"><i style="width:66%"></i></div><small>2 libres</small></div></td><td class="r">2</td><td><span class="chip info">En camino · 13/11</span></td></tr>
+      <tr><td>Polarizado nano cerámico 70 %<div class="sku">POL-NC70</div></td><td class="r">22</td><td class="r">4</td><td><div class="mini"><div class="bar"><i style="width:82%"></i></div><small>18 libres</small></div></td><td class="r">8</td><td><span class="chip ok">OK</span></td></tr>
+      <tr><td>Cámara de retroceso 4K<div class="sku">CAM-4K</div></td><td class="r">7</td><td class="r">2</td><td><div class="mini"><div class="bar"><i style="width:71%"></i></div><small>5 libres</small></div></td><td class="r">4</td><td><span class="chip ok">OK</span></td></tr>
+      <tr><td>Dashcam doble canal<div class="sku">DSH-2CH</div></td><td class="r">5</td><td class="r">1</td><td><div class="mini"><div class="bar"><i style="width:80%"></i></div><small>4 libres</small></div></td><td class="r">3</td><td><span class="chip bad">Diferencia −1 · revisar</span></td></tr>
+      <tr><td>Multimedia 10” inalámbrica<div class="sku">MMD-10</div></td><td class="r">6</td><td class="r">2</td><td><div class="mini"><div class="bar"><i style="width:66%"></i></div><small>4 libres</small></div></td><td class="r">3</td><td><span class="chip ok">OK</span></td></tr>
+    </tbody>
+  </table>
+</article>
+</main>
+</div>
+<script>
+(function(){
+  var svg=document.getElementById('chart'),NS='http://www.w3.org/2000/svg';
+  var days=['Jue 12','Vie 13','Sáb 14','Dom 15','Lun 16','Mar 17','Mié 18','Jue 19','Vie 20','Sáb 21','Dom 22','Lun 23','Mar 24','Mié 25'];
+  var demand=[1,1,0,0,1,1,1,1,1,0,0,1,1,1];
+  var sin=[],con=[],v=2;
+  demand.forEach(function(d,i){v-=d;sin.push(v);con.push(v+(i>=6?15:0))});
+  var W=760,H=300,L=34,R=14,T=16,B=36,min=-12,max=16;
+  function x(i){return L+(W-L-R)*(i/(days.length-1))}
+  function y(val){return T+(H-T-B)*(1-(val-min)/(max-min))}
+  function el(n,a,p){var e=document.createElementNS(NS,n);for(var k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e}
+  var defs=el('defs',{});
+  var g1=el('linearGradient',{id:'ga',x1:0,x2:0,y1:0,y2:1},defs);el('stop',{offset:0,'stop-color':'#5ac8fa','stop-opacity':.35},g1);el('stop',{offset:1,'stop-color':'#5ac8fa','stop-opacity':0},g1);
+  var g2=el('linearGradient',{id:'gb',x1:0,x2:0,y1:0,y2:1},defs);el('stop',{offset:0,'stop-color':'#ff453a','stop-opacity':0},g2);el('stop',{offset:1,'stop-color':'#ff453a','stop-opacity':.28},g2);
+  [-12,-8,-4,0,4,8,12,16].forEach(function(t){el('line',{x1:L,x2:W-R,y1:y(t),y2:y(t),stroke:t===0?'rgba(255,255,255,.28)':'rgba(255,255,255,.06)'});var tx=el('text',{x:L-10,y:y(t)+4,'text-anchor':'end','font-size':10.5,fill:'rgba(245,245,247,.4)'});tx.textContent=t});
+  days.forEach(function(d,i){if(i%2===0){var tx=el('text',{x:x(i),y:H-12,'text-anchor':'middle','font-size':10.5,fill:'rgba(245,245,247,.45)'});tx.textContent=d}
+    if(demand[i])el('rect',{x:x(i)-5,y:y(0)-18,width:10,height:18,rx:2.5,fill:'rgba(255,255,255,.14)'})});
+  el('line',{x1:L,x2:W-R,y1:y(6),y2:y(6),stroke:'#ffd60a','stroke-dasharray':'5 5','stroke-opacity':.8});
+  function path(arr){return arr.map(function(v,i){return(i?'L':'M')+x(i).toFixed(1)+','+y(v).toFixed(1)}).join(' ')}
+  el('path',{d:path(sin)+' L'+x(13)+','+y(0)+' L'+x(1)+','+y(0)+' Z',fill:'url(#gb)'});
+  el('path',{d:path(sin),fill:'none',stroke:'#ff453a','stroke-width':2,'stroke-linejoin':'round','stroke-dasharray':'2 0'});
+  el('path',{d:path(con)+' L'+x(13)+','+y(min)+' L'+x(0)+','+y(min)+' Z',fill:'url(#ga)'});
+  var p=el('path',{d:path(con),fill:'none',stroke:'#5ac8fa','stroke-width':2.5,'stroke-linejoin':'round',style:'filter:drop-shadow(0 0 8px rgba(90,200,250,.7))'});
+  var len=p.getTotalLength();p.style.strokeDasharray=len;p.style.strokeDashoffset=len;p.style.transition='stroke-dashoffset 2s cubic-bezier(.65,0,.35,1) .3s';requestAnimationFrame(function(){requestAnimationFrame(function(){p.style.strokeDashoffset=0})});
+  function marker(i,val,col,label,dy){el('circle',{cx:x(i),cy:y(val),r:5,fill:'#050607',stroke:col,'stroke-width':2});
+    var gx=el('g',{});var w=label.length*6.3+18;var bx=Math.min(Math.max(x(i)-w/2,L),W-R-w);
+    el('rect',{x:bx,y:y(val)+dy-15,width:w,height:24,rx:8,fill:'rgba(5,6,7,.85)',stroke:col,'stroke-opacity':.5},gx);
+    var tx=el('text',{x:bx+w/2,y:y(val)+dy+1,'text-anchor':'middle','font-size':11.5,'font-weight':600,fill:col},gx);tx.textContent=label}
+  marker(1,0,'#ff453a','Vie 13 · sin libres',30);
+  marker(6,con[6],'#5ac8fa','Mié 18 · llega la compra (+15)',-22);
+})();
+</script>
+<script>
+(function(){
+  function fit(){
+    document.querySelectorAll('[data-fit]').forEach(function(d){
+      d.style.transform='none';d.style.marginLeft='0';d.style.marginRight='0';
+      var w=d.offsetWidth,h=d.offsetHeight,avail=Math.max(320,window.innerWidth-32);
+      var s=Math.min(1,avail/w);
+      d.style.transform='scale('+s+')';
+      var m=(-(w-w*s)/2)+'px';d.style.marginLeft=m;d.style.marginRight=m;
+      d.parentElement.style.height=(h*s)+'px';
+    });
+  }
+  window.addEventListener('resize',fit);window.addEventListener('load',fit);fit();
+})();
+</script>
+</body>
+</html>

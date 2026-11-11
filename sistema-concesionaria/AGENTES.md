@@ -97,9 +97,9 @@ Ninguna herramienta devuelve datos de clientes. Ninguna herramienta ejecuta algo
 > | Alarma X-200 | 15 |
 > | Sensor volumétrico | 10 |
 >
-> **Por qué:** hay 12 instalaciones de alarma agendadas en los próximos 10 días y 8 unidades disponibles (14 en depósito − 6 reservadas). Alarmas SRL tarda 5 días hábiles. Con el consumo de las últimas 8 semanas (2,1 por día) el stock se agota el jueves 19. Se suman 3 unidades de stock de seguridad. Agregué los sensores para llegar al mínimo de compra de $500.000 y evitar el costo de envío.
+> **Por qué:** hay 14 en depósito, pero 12 ya están reservadas para instalaciones agendadas en los próximos 10 días: quedan 2 libres. Entran en promedio 5 pedidos nuevos por semana (últimas 8 semanas), así que desde el viernes 13 no habría alarmas para trabajos nuevos. Alarmas SRL tarda 5 días hábiles: pedido hoy, llega el miércoles 18. 15 unidades cubren unas 3 semanas de pedidos nuevos. Agregué 10 sensores volumétricos, que también están por debajo del punto de pedido, para llegar al mínimo de compra de $ 500.000 sin costo de envío.
 >
-> **Datos usados:** stock de ALR-X200 · agenda del 12 al 22 · consumo 8 semanas · condiciones de Alarmas SRL
+> **Datos usados:** stock de ALR-X200 y SNS-VOL · agenda del 12 al 25 · consumo de 8 semanas · condiciones de Alarmas SRL
 >
 > [ Aprobar ] [ Rechazar (con motivo) ]
 

@@ -5,6 +5,7 @@ Documento de diseño **v0.2**: lógica de negocio, arquitectura, seguridad, alta
 | Archivo | Qué es |
 |---|---|
 | `README.md` | Este documento: cómo funciona el sistema y por qué está diseñado así |
+| [`propuestas-visuales/`](propuestas-visuales/) | **10 pantallas de diseño** (HTML): ingreso, tablero, agenda, orden, tablets, WhatsApp, stock, facturación y centro de control. Abrir `index.html` |
 | [`ETAPAS.md`](ETAPAS.md) | **Etapa 1** (digitalización, carga manual, facturación manual asistida) y **etapa 2** (WhatsApp, facturación automática, stock inteligente) |
 | [`SEGURIDAD.md`](SEGURIDAD.md) | Ingreso ultra seguro (passkeys por rol), datos sensibles cifrados, quién ve qué, recuperación de cuentas |
 | [`AGENTES.md`](AGENTES.md) | Agentes de IA (stock, mercadería, WhatsApp, agenda): proponen, una persona aprueba |

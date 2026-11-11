@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Órbita · Tablero</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Barlow+Condensed:wght@600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#050607;--surface:rgba(255,255,255,.035);--surface-2:rgba(255,255,255,.065);
+  --line:rgba(255,255,255,.08);--line-2:rgba(255,255,255,.14);
+  --text:#f5f5f7;--text-2:rgba(245,245,247,.64);--text-3:rgba(245,245,247,.40);
+  --accent:#5ac8fa;--accent-2:#0a84ff;--glow:rgba(90,200,250,.35);
+  --ok:#30d158;--warn:#ffd60a;--bad:#ff453a;--violet:#bf5af2;
+  --r:16px;--r-lg:24px;--r-xl:32px;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter","Segoe UI",system-ui,sans-serif;
+  --ease:cubic-bezier(.2,.7,.2,1);
+}
+html{color-scheme:dark;background:var(--bg)}
+body{font-family:var(--font);background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;line-height:1.45;min-height:100vh;overflow-x:hidden;letter-spacing:-.006em}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background:
+  radial-gradient(1100px 620px at 78% -10%,rgba(90,200,250,.12),transparent 62%),
+  radial-gradient(900px 520px at -8% 108%,rgba(120,90,255,.075),transparent 60%)}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(255,255,255,.022) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.022) 1px,transparent 1px);
+  background-size:56px 56px;-webkit-mask-image:radial-gradient(ellipse 85% 60% at 50% 0%,#000 25%,transparent 80%);mask-image:radial-gradient(ellipse 85% 60% at 50% 0%,#000 25%,transparent 80%)}
+body>*{position:relative;z-index:1}
+a{color:inherit;text-decoration:none}
+button,input,textarea,select{font:inherit;color:inherit}
+.num{font-variant-numeric:tabular-nums}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--text-3)}
+.muted{color:var(--text-2)}.dim{color:var(--text-3)}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic.sm{width:16px;height:16px}.ic.xs{width:13px;height:13px}.ic.lg{width:28px;height:28px}
+.grad{background:linear-gradient(90deg,#fff 0%,#bfe9ff 55%,#5ac8fa 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* ---------- shell ---------- */
+.app{display:grid;grid-template-columns:252px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px;padding:22px 14px 16px;border-right:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.028),rgba(255,255,255,.006));backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+.brand{display:flex;align-items:center;gap:13px;padding:4px 10px 24px}
+.brand b{display:block;font-weight:700;letter-spacing:.34em;font-size:13px}
+.brand small{display:block;font-size:11px;color:var(--text-3);letter-spacing:.02em;margin-top:3px}
+.orb{width:30px;height:30px;flex:none;border-radius:50%;position:relative;border:1.5px solid rgba(255,255,255,.8);box-shadow:0 0 22px var(--glow),inset 0 0 12px rgba(90,200,250,.25)}
+.orb::before{content:"";position:absolute;inset:6px;border-radius:50%;border:1px solid rgba(255,255,255,.25)}
+.orb::after{content:"";position:absolute;width:7px;height:7px;border-radius:50%;background:var(--accent);top:-4px;left:50%;margin-left:-3.5px;box-shadow:0 0 12px var(--accent);animation:orbit 9s linear infinite;transform-origin:3.5px 18.5px}
+@keyframes orbit{to{transform:rotate(360deg)}}
+.side nav{display:flex;flex-direction:column;gap:2px}
+.nav{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;color:var(--text-2);font-size:14px;font-weight:500;transition:background .25s,color .25s}
+.nav:hover{background:var(--surface-2);color:var(--text)}
+.nav.on{background:linear-gradient(90deg,rgba(90,200,250,.17),rgba(90,200,250,.03));color:var(--text);box-shadow:inset 0 0 0 1px rgba(90,200,250,.22)}
+.nav.on .ic{color:var(--accent);filter:drop-shadow(0 0 6px rgba(90,200,250,.6))}
+.nav .badge{margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:99px;display:grid;place-items:center;font-size:11px;font-weight:600;background:var(--accent);color:#001521}
+.nav .pip{margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--warn);box-shadow:0 0 8px var(--warn)}
+.side-sec{margin:20px 12px 6px}
+.me{margin-top:auto;display:flex;align-items:center;gap:11px;padding:12px;border-radius:18px;background:var(--surface);border:1px solid var(--line)}
+.av{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:600;letter-spacing:.02em;background:linear-gradient(140deg,#43464e,#15171b);border:1px solid var(--line-2)}
+.me b{display:block;font-size:13px;font-weight:600}.me small{display:block;font-size:11px;color:var(--text-3)}
+.me .ic{margin-left:auto;color:var(--ok)}
+.main{padding:28px 36px 56px;min-width:0}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:26px}
+.top h1{font-size:34px;font-weight:600;letter-spacing:-.035em;line-height:1.08;margin-top:7px}
+.top-r{display:flex;align-items:center;gap:10px}
+.search{display:flex;align-items:center;gap:10px;width:330px;height:42px;padding:0 14px;border-radius:14px;background:var(--surface);border:1px solid var(--line);color:var(--text-3)}
+.search input{flex:1;min-width:0;background:none;border:0;outline:0;font-size:14px;color:var(--text)}
+.search input::placeholder{color:var(--text-3)}
+kbd{font:500 11px var(--font);padding:3px 6px;border-radius:6px;border:1px solid var(--line-2);color:var(--text-3)}
+.icon-btn{position:relative;width:42px;height:42px;display:grid;place-items:center;border-radius:14px;background:var(--surface);border:1px solid var(--line);cursor:pointer;color:var(--text-2);transition:color .2s,background .2s}
+.icon-btn:hover{color:var(--text);background:var(--surface-2)}
+.icon-btn .dot{position:absolute;top:10px;right:11px;width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+
+/* ---------- surfaces ---------- */
+.card{position:relative;border-radius:var(--r-lg);background:linear-gradient(180deg,rgba(255,255,255,.056),rgba(255,255,255,.016));border:1px solid var(--line);box-shadow:inset 0 1px 0 rgba(255,255,255,.065),0 40px 80px -42px rgba(0,0,0,.75);padding:22px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);min-width:0}
+.card.glow{border-color:rgba(90,200,250,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 0 1px rgba(90,200,250,.06),0 30px 90px -40px rgba(90,200,250,.45)}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.card-h h2,.h2{font-size:15.5px;font-weight:600;letter-spacing:-.012em}
+.link{font-size:13px;color:var(--accent);display:inline-flex;align-items:center;gap:4px}
+.grid{display:grid;gap:18px}
+.row{display:flex;align-items:center;gap:12px}
+.sep{height:1px;background:var(--line);margin:16px 0}
+.spacer{flex:1}
+
+/* ---------- chips & buttons ---------- */
+.chip{display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 11px;border-radius:999px;font-size:12px;font-weight:500;background:var(--surface-2);border:1px solid var(--line);color:var(--text-2);white-space:nowrap}
+.chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.chip.plain::before{display:none}
+.chip.ok{color:var(--ok);background:rgba(48,209,88,.08);border-color:rgba(48,209,88,.22)}
+.chip.warn{color:var(--warn);background:rgba(255,214,10,.07);border-color:rgba(255,214,10,.22)}
+.chip.bad{color:var(--bad);background:rgba(255,69,58,.08);border-color:rgba(255,69,58,.25)}
+.chip.info{color:var(--accent);background:rgba(90,200,250,.08);border-color:rgba(90,200,250,.25)}
+.chip.violet{color:#d59bff;background:rgba(191,90,242,.09);border-color:rgba(191,90,242,.28)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:42px;padding:0 19px;border-radius:999px;font-size:14px;font-weight:600;letter-spacing:-.01em;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);cursor:pointer;transition:transform .15s var(--ease),background .25s,box-shadow .25s,opacity .25s;white-space:nowrap}
+.btn:hover{background:rgba(255,255,255,.11)}
+.btn:active{transform:scale(.975)}
+.btn.primary{background:linear-gradient(180deg,#fff,#dedee3);color:#050607;border-color:transparent;box-shadow:0 12px 34px -12px rgba(255,255,255,.42)}
+.btn.primary:hover{background:#fff}
+.btn.accent{background:linear-gradient(180deg,#7bd6ff,#2b9cff);color:#00111c;border-color:transparent;box-shadow:0 12px 34px -12px rgba(90,200,250,.75)}
+.btn.ghost{background:transparent}
+.btn.danger{color:#ff7b72}
+.btn.lg{height:54px;padding:0 28px;font-size:15.5px}
+.btn.sm{height:34px;padding:0 14px;font-size:13px}
+.btn[disabled],.btn.off{opacity:.35;pointer-events:none}
+
+/* ---------- patente Mercosur (estilizada) ---------- */
+.plate{display:inline-flex;flex-direction:column;align-items:stretch;background:linear-gradient(180deg,#fbfbfd,#e6e7ea);border-radius:6px;border:1.5px solid #0b0b0c;box-shadow:0 0 0 1px rgba(255,255,255,.25),0 10px 26px -10px rgba(0,0,0,.7);overflow:hidden;flex:none;vertical-align:middle}
+.plate i{display:block;background:linear-gradient(180deg,#2457c5,#163f99);color:#fff;font:600 6.5px/1 var(--font);letter-spacing:.2em;text-align:center;padding:3px 6px;font-style:normal}
+.plate b{font-family:"Barlow Condensed","Arial Narrow",var(--font);font-weight:600;font-size:25px;line-height:1.08;letter-spacing:.08em;color:#101012;text-align:center;padding:1px 11px 2px}
+.plate.sm i{font-size:4.5px;padding:2px 4px}.plate.sm b{font-size:15px;padding:0 7px 1px}
+.plate.lg i{font-size:9px;padding:4px 8px}.plate.lg b{font-size:40px;padding:1px 18px 3px}
+.vin{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;letter-spacing:.06em;color:var(--text-2);padding:4px 8px;border-radius:7px;border:1px dashed var(--line-2)}
+
+/* ---------- datos ---------- */
+.kpi .v{font-size:34px;font-weight:600;letter-spacing:-.035em;margin-top:12px;line-height:1}
+.kpi .d{font-size:12.5px;margin-top:10px;color:var(--text-2)}
+.up{color:var(--ok)}
+.bar{height:6px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent-2),var(--accent))}
+table.t{width:100%;border-collapse:collapse;font-size:13.5px}
+.t th{text-align:left;font-size:10.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--text-3);padding:0 12px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+.t td{padding:13px 12px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle}
+.t tbody tr{transition:background .2s}
+.t tbody tr:hover{background:rgba(255,255,255,.025)}
+.t tr:last-child td{border-bottom:0}
+.r{text-align:right}
+.live{width:8px;height:8px;flex:none;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px rgba(48,209,88,.16),0 0 12px var(--ok);animation:pulse 2.2s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 8px rgba(48,209,88,0),0 0 12px var(--ok)}}
+.seg{display:inline-flex;padding:3px;border-radius:12px;background:var(--surface);border:1px solid var(--line)}
+.seg button{border:0;background:none;height:30px;padding:0 13px;border-radius:9px;font-size:13px;font-weight:500;color:var(--text-2);cursor:pointer}
+.seg button.on{background:rgba(255,255,255,.1);color:var(--text);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+
+/* ---------- auto (SVG) ---------- */
+.car{display:block;width:100%;height:auto;overflow:visible}
+.car .ln{fill:none;stroke-linecap:round;stroke-linejoin:round}
+.car .draw{stroke-dasharray:1900;stroke-dashoffset:1900;animation:draw 2.8s cubic-bezier(.65,0,.35,1) .2s forwards}
+.car .fade{opacity:0;animation:fadein 1.2s ease 1.8s forwards}
+.car .lamp{filter:drop-shadow(0 0 6px #fff)}
+.car .tail{filter:drop-shadow(0 0 6px #ff453a)}
+.car .scan{animation:scan 5s ease-in-out 2.6s infinite}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes fadein{to{opacity:1}}
+@keyframes scan{0%,100%{transform:translateX(0);opacity:0}10%{opacity:.9}50%{transform:translateX(470px);opacity:.9}60%,99%{opacity:0}}
+
+/* ---------- dispositivo (tablet) ---------- */
+.stage{min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:30px;padding:44px 16px 60px}
+.caption{text-align:center;max-width:720px}
+.caption h1{font-size:40px;font-weight:600;letter-spacing:-.04em;margin:10px 0 8px;line-height:1.05}
+.caption p{color:var(--text-2);font-size:16px}
+.fit{width:100%;display:flex;justify-content:center;align-items:flex-start}
+.device{flex:none;border-radius:48px;padding:16px;background:linear-gradient(150deg,#3a3c41 0%,#111214 35%,#1c1d20 70%,#2c2e32 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),0 0 0 1px #000,0 90px 150px -60px rgba(0,0,0,.95),0 0 140px -50px rgba(90,200,250,.3);transform-origin:top center}
+.screen{width:1194px;height:834px;border-radius:33px;overflow:hidden;background:#050607;position:relative;isolation:isolate}
+.screen::before{content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(900px 500px at 80% -10%,rgba(90,200,250,.11),transparent 60%),radial-gradient(700px 400px at 0% 110%,rgba(120,90,255,.07),transparent 60%)}
+.statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 26px;font-size:13px;font-weight:600}
+
+/* ---------- entrada ---------- */
+.reveal{opacity:0;transform:translateY(12px);animation:in .8s var(--ease) forwards}
+.d1{animation-delay:.06s}.d2{animation-delay:.12s}.d3{animation-delay:.18s}.d4{animation-delay:.24s}.d5{animation-delay:.3s}.d6{animation-delay:.36s}
+@keyframes in{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.reveal{opacity:1;transform:none}.car .draw{stroke-dashoffset:0}.car .fade{opacity:1}}
+@media (max-width:1100px){.app{grid-template-columns:1fr}.side{display:none}.main{padding:20px 16px 40px}.search{display:none}.top h1{font-size:28px}}
+@media (max-width:600px){.kpis{grid-template-columns:1fr!important}.kpi .v{font-size:30px}.spark{display:none}.top h1{font-size:26px}}
+
+/* ---------- pantalla ---------- */
+.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+.kpi .eyebrow{display:flex;align-items:center;gap:8px}
+.spark{position:absolute;right:18px;top:20px;width:86px;height:34px;opacity:.9}
+.g-main{grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);margin-top:18px}
+.next{padding:28px 30px 28px;overflow:hidden;display:flex}
+.next::before{content:"";position:absolute;inset:0;background:radial-gradient(600px 260px at 70% 70%,rgba(90,200,250,.13),transparent 70%);pointer-events:none}
+.next h3{font-size:32px;font-weight:600;letter-spacing:-.04em;margin-top:8px;line-height:1.05}
+.next .meta{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.next .stage-car{margin:0 -6px 0 -10px;transform:scale(1.04);transform-origin:center}
+@media (max-width:700px){.next-grid{grid-template-columns:1fr}.next .actions{flex-wrap:wrap}}
+.next-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1.2fr);gap:8px;align-items:center;width:100%}.next-grid>div:first-child{display:flex;flex-direction:column;height:100%}
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:24px}
+.steps i{height:4px;border-radius:9px;background:rgba(255,255,255,.1)}
+.steps i.done{background:linear-gradient(90deg,var(--accent-2),var(--accent));box-shadow:0 0 12px rgba(90,200,250,.5)}
+.steps-l{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:9px;font-size:11px;color:var(--text-3)}.steps-l span,.steps-l b{white-space:nowrap}
+.steps-l b{color:var(--text);font-weight:500}
+.next .actions{display:flex;gap:10px;margin-top:auto;padding-top:26px}
+.prop{padding:16px;border-radius:18px;background:rgba(255,255,255,.03);border:1px solid var(--line);margin-top:12px}
+.prop:first-of-type{margin-top:0}
+.prop .who{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-3)}
+.prop .who .ic{color:#d59bff}
+.prop b{display:block;font-size:14.5px;margin:8px 0 4px;letter-spacing:-.01em}
+.prop p{font-size:13px;color:var(--text-2);line-height:1.5}
+.prop .row{margin-top:12px}
+.g-2{grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);margin-top:18px}
+.gantt{position:relative;margin-top:6px}
+.g-hours{display:grid;grid-template-columns:repeat(11,1fr);margin-left:74px;font-size:11px;color:var(--text-3);padding-bottom:8px;border-bottom:1px solid var(--line)}
+.g-row{display:flex;align-items:center;height:54px;border-bottom:1px solid rgba(255,255,255,.045)}
+.g-row:last-child{border-bottom:0}
+.g-row>span{width:74px;flex:none;font-size:12.5px;color:var(--text-2)}
+.g-track{position:relative;flex:1;height:100%;background-image:linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:calc(100%/11) 100%}
+.blk{position:absolute;top:9px;bottom:9px;border-radius:10px;padding:6px 10px;font-size:11.5px;line-height:1.2;overflow:hidden;white-space:nowrap;border:1px solid rgba(90,200,250,.35);background:rgba(90,200,250,.08);color:var(--text)}
+.blk small{display:block;color:var(--text-3);font-size:10.5px;margin-top:2px}
+.blk.done{border-color:rgba(48,209,88,.3);background:rgba(48,209,88,.07)}
+.blk.cur{border-color:rgba(90,200,250,.7);background:linear-gradient(90deg,rgba(90,200,250,.28),rgba(90,200,250,.1));box-shadow:0 0 24px -6px rgba(90,200,250,.7)}
+.now{position:absolute;top:-6px;bottom:0;width:2px;background:var(--accent);box-shadow:0 0 12px var(--accent);z-index:2}
+.now::before{content:"12:05";position:absolute;top:-20px;left:-17px;font-size:10.5px;font-weight:600;color:var(--accent)}
+.status li{list-style:none;display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13.5px}
+.status li:last-child{border-bottom:0}
+.status .ic{color:var(--text-2)}
+.status .chip{margin-left:auto}
+.g-3{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:18px}
+.list li{list-style:none;display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.list li:last-child{border-bottom:0}
+.list .t1{font-size:13.5px;font-weight:500}.list .t2{font-size:12px;color:var(--text-3)}
+.list .tm{margin-left:auto;font-size:13px;color:var(--text-2)}
+.bars{display:flex;align-items:flex-end;gap:12px;height:150px;margin-top:10px}
+.bars div{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;height:100%;justify-content:flex-end}
+.bars i{width:100%;max-width:30px;border-radius:8px 8px 4px 4px;background:linear-gradient(180deg,rgba(90,200,250,.85),rgba(10,132,255,.25))}
+.bars i.today{background:linear-gradient(180deg,#fff,rgba(90,200,250,.5));box-shadow:0 0 18px rgba(90,200,250,.5)}
+.bars small{font-size:11px;color:var(--text-3)}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tab{padding:12px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
+.tab b{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500}
+.tab small{display:block;font-size:11px;color:var(--text-3);margin-top:6px}
+.sem{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.sem.y{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+@media (max-width:1280px){.kpis{grid-template-columns:repeat(2,1fr)}.g-main,.g-2,.g-3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></symbol><symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol><symbol id="i-car" viewBox="0 0 24 24"><path d="M3.2 15.6v-2.4c0-.7.4-1.3 1-1.6l2.3-1.1 2-3.1c.4-.6 1-.9 1.7-.9h4.4c.6 0 1.2.3 1.6.8l2.6 3.2 1.9.5c.9.2 1.5 1 1.5 1.9v2.5c0 .4-.3.8-.8.8h-.8M5.9 16.4H4M14.8 16.4h-4.4"/><circle cx="8.3" cy="16.4" r="2"/><circle cx="17" cy="16.4" r="2"/></symbol><symbol id="i-chat" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 0 1-12.4 7.6l-4.6 1 1-4.4A8.5 8.5 0 1 1 20.5 12z"/></symbol><symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></symbol><symbol id="i-doc" viewBox="0 0 24 24"><path d="M6.5 3.5h8l3.5 3.5v13.5h-11.5z"/><path d="M14.5 3.5V7H18M9.5 11.5h5M9.5 15h5"/></symbol><symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.2 19 6v5.6c0 4.3-2.9 7.6-7 9.2-4.1-1.6-7-4.9-7-9.2V6l7-2.8z"/><path d="m9 12 2.1 2.1L15.2 10"/></symbol><symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol><symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol><symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol><symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8.5h3.2L9 6h6l1.8 2.5H20v10H4z"/><circle cx="12" cy="13.2" r="3.4"/></symbol><symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol><symbol id="i-flag" viewBox="0 0 24 24"><path d="M5.5 21V4M5.5 4h11l-2 4 2 4h-11"/></symbol><symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8.5-8.5M16 7l2.5 2.5M14 9l2 2"/></symbol><symbol id="i-face" viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9.5v1M15 9.5v1M12 9.5v3.5h-1M9.5 15.5c1.4 1.2 3.6 1.2 5 0"/></symbol><symbol id="i-wifi" viewBox="0 0 24 24"><path d="M3.5 9.5a12 12 0 0 1 17 0M6.5 12.7a7.6 7.6 0 0 1 11 0M9.5 15.8a3.2 3.2 0 0 1 5 0"/><path d="M12 19h.01"/></symbol><symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol><symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.5c.5 3.9 2.6 6 6.5 6.5-3.9.5-6 2.6-6.5 6.5-.5-3.9-2.6-6-6.5-6.5 3.9-.5 6-2.6 6.5-6.5z"/><path d="M18.5 15.5c.2 1.6 1 2.4 2.5 2.5-1.5.2-2.3 1-2.5 2.5-.2-1.5-1-2.3-2.5-2.5 1.5-.1 2.3-.9 2.5-2.5z"/></symbol><symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol><symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol><symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></symbol><symbol id="i-signal" viewBox="0 0 24 24"><path d="M5 19v-3M10 19v-6M15 19v-9M20 19V5"/></symbol><symbol id="i-tablet" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M10.5 18h3"/></symbol><symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2.8"/><path d="M10.5 18.5h3"/></symbol><symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20.5c1.3-3.6 4.2-5.4 7.5-5.4s6.2 1.8 7.5 5.4"/></symbol><symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol><symbol id="i-chevl" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol><symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol><symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/></symbol><symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.5V4M7 9l5-5 5 5M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></symbol><symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-3-7-7-1z"/></symbol><symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10a4 4 0 0 0 .6-8A6 6 0 0 0 6 11.5a3.5 3.5 0 0 0 1 7z"/></symbol><symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8"/></symbol><symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16M20 20v-4h-4"/></symbol><symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="m4 17 5-5 4 4 3-3 4 4"/></symbol><symbol id="i-battery" viewBox="0 0 24 24"><rect x="3" y="7.5" width="16" height="9" rx="2.5"/><path d="M21 10.5v3"/></symbol><symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol><symbol id="i-tool" viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.3 5L4 16.7 7.3 20l5.2-5.2a4 4 0 0 0 5-5.3l-2.4 2.4-2.6-.7-.7-2.6 2.7-2.1z"/></symbol><symbol id="i-map" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></symbol></svg>
+<div class="app">
+<aside class="side"><a class="brand" href="index.html"><span class="orb"></span><span><b>ÓRBITA</b><small>Instalaciones · Concesionaria</small></span></a><nav><a class="nav on" href="02-tablero.html"><svg class="ic"><use href="#i-grid"/></svg>Tablero</a><a class="nav" href="03-agenda.html"><svg class="ic"><use href="#i-calendar"/></svg>Agenda</a><a class="nav" href="04-orden.html"><svg class="ic"><use href="#i-car"/></svg>Órdenes</a><a class="nav" href="07-whatsapp.html"><svg class="ic"><use href="#i-chat"/></svg>WhatsApp<span class="badge">3</span></a><a class="nav" href="08-stock.html"><svg class="ic"><use href="#i-box"/></svg>Stock<span class="pip"></span></a><a class="nav" href="09-facturacion.html"><svg class="ic"><use href="#i-doc"/></svg>Facturación</a><a class="nav" href="10-centro-control.html"><svg class="ic"><use href="#i-shield"/></svg>Centro de control</a></nav><div class="side-sec eyebrow">En el taller</div><nav><a class="nav" href="05-tablet-operario.html"><svg class="ic"><use href="#i-tablet"/></svg>Tablet del operario</a><a class="nav" href="06-tablet-firma.html"><svg class="ic"><use href="#i-pen"/></svg>Tablet de firma</a></nav><div class="me"><span class="av">CR</span><span><b>Carolina Ruiz</b><small>Coordinación</small></span><svg class="ic sm" title="Passkey activa"><use href="#i-lock"/></svg></div></aside>
+<main class="main">
+<header class="top reveal"><div><div class="eyebrow">Miércoles 11 de noviembre · 12:05</div><h1>Buenas tardes, Carolina</h1></div><div class="top-r"><label class="search"><svg class="ic sm"><use href="#i-search"/></svg><input placeholder="Buscar patente, cliente u orden"><kbd>⌘K</kbd></label><button class="icon-btn" aria-label="Avisos"><svg class="ic"><use href="#i-bell"/></svg><i class="dot"></i></button></div></header>
+
+<section class="grid kpis">
+  <article class="card kpi reveal d1"><div class="eyebrow">Órdenes de hoy</div><div class="v num">14</div><div class="d"><span class="up">▲ 3</span> vs. el miércoles pasado</div>
+    <svg class="spark" viewBox="0 0 86 34"><polyline fill="none" stroke="#5ac8fa" stroke-width="1.6" stroke-linecap="round" points="0,26 12,22 24,24 36,15 48,18 60,10 72,12 86,4"/></svg></article>
+  <article class="card kpi reveal d2"><div class="eyebrow"><span class="live"></span>En curso</div><div class="v num">5</div><div class="d">4 boxes ocupados · 1 libre</div></article>
+  <article class="card kpi reveal d3"><div class="eyebrow">Listas para entregar</div><div class="v num">3</div><div class="d">Próxima a las 16:30</div></article>
+  <article class="card kpi reveal d4"><div class="eyebrow">Facturado hoy</div><div class="v num">$ 2.480.000</div><div class="d">9 comprobantes · 0 diferencias</div>
+    <svg class="spark" viewBox="0 0 86 34"><polyline fill="none" stroke="#30d158" stroke-width="1.6" stroke-linecap="round" points="0,30 14,27 28,28 42,20 56,16 70,9 86,6"/></svg></article>
+</section>
+
+<section class="grid g-main">
+  <article class="card next glow reveal d2">
+    <div class="next-grid">
+      <div>
+        <div class="eyebrow">Próxima entrega · 16:30</div>
+        <h3>Toyota Corolla XEi</h3>
+        <div class="meta"><span class="plate"><i>REPÚBLICA ARGENTINA</i><b>AB 123 CD</b></span><span class="muted" style="font-size:13.5px">María Pérez<br><span class="dim">OT-1042 · Gris plata</span></span></div>
+        <div class="steps"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i></i></div>
+        <div class="steps-l"><span>Confirmada</span><span>Agendada</span><span>En curso</span><b>Terminada</b><span>Entregada</span></div>
+        <div class="actions"><a class="btn accent" href="06-tablet-firma.html"><svg class="ic sm"><use href="#i-pen"/></svg>Enviar a tablet de firma</a><a class="btn" href="04-orden.html">Ver orden</a></div>
+      </div>
+      <div class="stage-car"><svg class="car " viewBox="0 0 610 215" aria-hidden="true"><defs><linearGradient id="cg2" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".25"/><stop offset=".38" stop-color="#fff"/><stop offset=".75" stop-color="#5ac8fa"/><stop offset="1" stop-color="#5ac8fa" stop-opacity=".25"/></linearGradient><radialGradient id="cf2"><stop offset="0" stop-color="#5ac8fa" stop-opacity=".4"/><stop offset="1" stop-color="#5ac8fa" stop-opacity="0"/></radialGradient><linearGradient id="cs2" x1="0" x2="1"><stop offset="0" stop-color="#5ac8fa" stop-opacity="0"/><stop offset=".5" stop-color="#5ac8fa" stop-opacity=".9"/><stop offset="1" stop-color="#5ac8fa" stop-opacity="0"/></linearGradient><filter id="cb2" x="-10%" y="-40%" width="120%" height="180%"><feGaussianBlur stdDeviation="7"/></filter></defs><ellipse cx="305" cy="192" rx="285" ry="16" fill="url(#cf2)"/><path d="M20,190 H590" stroke="url(#cg2)" stroke-opacity=".35" class="ln"/><g filter="url(#cb2)" opacity=".55"><path class="ln draw" d="M48,158 L44,141 Q45,127 74,121 L190,106 Q232,72 268,63 Q340,52 410,60 Q452,74 486,100 L551,108 Q566,112 566,133 L562,158 L497,158 A42,42 0 0,0 413,158 L192,158 A42,42 0 0,0 108,158 Z" stroke="#5ac8fa" stroke-width="3.5"/></g><path class="ln draw" d="M48,158 L44,141 Q45,127 74,121 L190,106 Q232,72 268,63 Q340,52 410,60 Q452,74 486,100 L551,108 Q566,112 566,133 L562,158 L497,158 A42,42 0 0,0 413,158 L192,158 A42,42 0 0,0 108,158 Z" stroke="url(#cg2)" stroke-width="1.8"/><path class="ln draw" d="M206,105 Q240,77 272,69 L402,66 Q439,78 466,101 Z M339,67 L337,103" stroke="rgba(255,255,255,.5)" stroke-width="1.2"/><path class="ln draw" d="M80,129 Q300,118 548,117" stroke="rgba(255,255,255,.22)" stroke-width="1"/><path class="ln draw" d="M197,110 L200,154 M337,105 L339,156" stroke="rgba(255,255,255,.14)" stroke-width="1"/><g class="fade"><circle cx="150" cy="156" r="33" stroke="url(#cg2)" stroke-width="1.6" class="ln"/><circle cx="150" cy="156" r="21" stroke="rgba(255,255,255,.35)" stroke-width="1" class="ln"/><path class="ln" stroke="rgba(255,255,255,.28)" stroke-width="1" d="M150,156 L171.0,156.0"/><path class="ln" stroke="rgba(255,255,255,.28)" stroke-width="1" d="M150,156 L156.5,176.0"/><path class="ln" stroke="rgba(255,255,255,.28)" stroke-width="1" d="M150,156 L133.0,168.3"/><path class="ln" stroke="rgba(255,255,255,.28)" stroke-width="1" d="M150,156 L133.0,143.7"/><path class="ln" stroke="rgba(255,255,255,.28)" stroke-width="1" d="M150,156 L156.5,136.0"/><circle cx="150" cy="156" r="4" fill="#5ac8fa" opacity=".8"/></g><g class="fade"><circle cx="455" cy="156" r="33" stroke="url(#cg2)" stroke-width="1.6" class="ln"/><circle cx="455" cy="156" r="21" stroke="rgba(255,255,255,.35)" stroke-width="1" class="ln"/><path class="ln" stroke="rgba(255,255,255,.28)" stroke-width="1" d="M455,156 L476.0,156.0"/><path class="ln" stroke="rgba(255,255,255,.28)" stroke-width="1" d="M455,156 L461.5,176.0"/><path class="ln" stroke="rgba(255,255,255,.28)" stroke-width="1" d="M455,156 L438.0,168.3"/><path class="ln" stroke="rgba(255,255,255,.28)" stroke-width="1" d="M455,156 L438.0,143.7"/><path class="ln" stroke="rgba(255,255,255,.28)" stroke-width="1" d="M455,156 L461.5,136.0"/><circle cx="455" cy="156" r="4" fill="#5ac8fa" opacity=".8"/></g><path class="ln fade lamp" d="M52,133 Q64,127 92,125" stroke="#fff" stroke-width="3"/><path class="ln fade tail" d="M547,112 L562,119" stroke="#ff453a" stroke-width="3"/><rect class="scan" x="40" y="58" width="56" height="102" fill="url(#cs2)" opacity="0"/></svg></div>
+    </div>
+  </article>
+
+  <article class="card reveal d3">
+    <div class="card-h"><h2>Propuestas de agentes</h2><span class="chip violet">2 pendientes</span></div>
+    <div class="prop">
+      <div class="who"><svg class="ic sm"><use href="#i-spark"/></svg>Agente de reposición · hoy 02:00<span class="spacer"></span>vence en 2 d</div>
+      <b>Compra sugerida · Alarmas SRL</b>
+      <p>15 alarmas X-200 y 10 sensores. Quedan 2 alarmas libres: el resto está reservado para la agenda.</p>
+      <div class="row"><a class="btn sm primary" href="08-stock.html">Revisar</a><span class="dim" style="font-size:12px">$ 1.684.000 + IVA</span></div>
+    </div>
+    <div class="prop">
+      <div class="who"><svg class="ic sm"><use href="#i-spark"/></svg>Asistente de agenda · 11:48<span class="spacer"></span>vence en 23 h</div>
+      <b>Reprogramar el jueves sin Lucas</b>
+      <p>Mueve 2 turnos a Box 4 y 1 al viernes. Avisar a 1 cliente.</p>
+      <div class="row"><a class="btn sm" href="03-agenda.html">Ver en la agenda</a></div>
+    </div>
+  </article>
+</section>
+
+<section class="grid g-2">
+  <article class="card reveal d3">
+    <div class="card-h"><h2>Hoy en el taller</h2><a class="link" href="03-agenda.html">Abrir agenda <svg class="ic xs"><use href="#i-chev"/></svg></a></div>
+    <div class="gantt">
+      <div class="g-hours num"><span>08</span><span>09</span><span>10</span><span>11</span><span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span></div>
+      <div style="position:relative">
+        <div class="now" style="left:calc(74px + (100% - 74px) * .3712)"></div>
+        <div class="g-row"><span>Box 1</span><div class="g-track">
+          <div class="blk done" style="left:4.5%;width:13.6%">Alarma<small>AB 123 CD</small></div>
+          <div class="blk cur" style="left:22.7%;width:18.2%">PPF frontal<small>AE 456 FG · Juan</small></div>
+          <div class="blk" style="left:54.5%;width:13.6%">Cámara 4K<small>AF 789 HJ</small></div></div></div>
+        <div class="g-row"><span>Box 2</span><div class="g-track">
+          <div class="blk done" style="left:9.1%;width:18.2%">Polarizado<small>AD 321 KL</small></div>
+          <div class="blk cur" style="left:31.8%;width:13.6%">Sensores<small>AG 654 MN · Ana</small></div>
+          <div class="blk" style="left:63.6%;width:22.7%">Multimedia 10”<small>AH 987 PQ</small></div></div></div>
+        <div class="g-row"><span>Box 3</span><div class="g-track">
+          <div class="blk done" style="left:0%;width:13.6%">Dashcam<small>AC 210 RS</small></div>
+          <div class="blk cur" style="left:18.2%;width:31.8%">PPF completo · Hilux 0 km<small>VIN …0123456 · Lucas</small></div>
+          <div class="blk" style="left:72.7%;width:18.2%">Alarma<small>AE 902 TU</small></div></div></div>
+        <div class="g-row"><span>Box 4</span><div class="g-track">
+          <div class="blk cur" style="left:36.4%;width:9.1%">Polarizado<small>Sofía</small></div>
+          <div class="blk" style="left:68.2%;width:13.6%">Sensores<small>AB 552 VW</small></div></div></div>
+      </div>
+    </div>
+  </article>
+
+  <article class="card reveal d4">
+    <div class="card-h"><h2>Estado del sistema</h2><a class="link" href="10-centro-control.html">Centro de control <svg class="ic xs"><use href="#i-chev"/></svg></a></div>
+    <ul class="status">
+      <li><svg class="ic"><use href="#i-wifi"/></svg>Internet del local<span class="chip ok">Fibra · 4G en espera</span></li>
+      <li><svg class="ic"><use href="#i-tablet"/></svg>Tablets<span class="chip ok">6 de 6 conectadas</span></li>
+      <li><svg class="ic"><use href="#i-cloud"/></svg>Sistema · São Paulo<span class="chip ok">Operativo</span></li>
+      <li><svg class="ic"><use href="#i-doc"/></svg>ARCA · facturación<span class="chip ok">Responde</span></li>
+      <li><svg class="ic"><use href="#i-shield"/></svg>Plan de emergencia<span class="chip plain">Nivel 0 · Normal</span></li>
+    </ul>
+  </article>
+</section>
+
+<section class="grid g-3">
+  <article class="card reveal d4">
+    <div class="card-h"><h2>Entregas de hoy</h2><span class="dim" style="font-size:12px">3</span></div>
+    <ul class="list">
+      <li><span class="plate sm"><i>REPÚBLICA ARGENTINA</i><b>AB 123 CD</b></span><span><div class="t1">Toyota Corolla</div><div class="t2">María Pérez · Alarma</div></span><span class="tm num">16:30</span></li>
+      <li><span class="plate sm"><i>REPÚBLICA ARGENTINA</i><b>AD 321 KL</b></span><span><div class="t1">Ford Ranger</div><div class="t2">Transportes del Sur · Polarizado</div></span><span class="tm num">17:00</span></li>
+      <li><span class="plate sm"><i>REPÚBLICA ARGENTINA</i><b>AC 210 RS</b></span><span><div class="t1">Peugeot 2008</div><div class="t2">Lucía Benítez · Dashcam</div></span><span class="tm num">18:15</span></li>
+    </ul>
+  </article>
+  <article class="card reveal d5">
+    <div class="card-h"><h2>Facturación de la semana</h2><span class="chip info">$ 9,6 M</span></div>
+    <div class="bars">
+      <div><i style="height:58%"></i><small>Lun</small></div>
+      <div><i style="height:76%"></i><small>Mar</small></div>
+      <div><i class="today" style="height:64%"></i><small>Mié</small></div>
+      <div><i style="height:8%;opacity:.25"></i><small>Jue</small></div>
+      <div><i style="height:8%;opacity:.25"></i><small>Vie</small></div>
+    </div>
+  </article>
+  <article class="card reveal d6">
+    <div class="card-h"><h2>Tablets</h2><a class="link" href="05-tablet-operario.html">Ver tablet <svg class="ic xs"><use href="#i-chev"/></svg></a></div>
+    <div class="tabs">
+      <div class="tab"><b><i class="sem"></i>Box 1</b><small>Juan · 92 %</small></div>
+      <div class="tab"><b><i class="sem"></i>Box 2</b><small>Ana · 71 %</small></div>
+      <div class="tab"><b><i class="sem y"></i>Box 3</b><small>Lucas · 18 %</small></div>
+      <div class="tab"><b><i class="sem"></i>Box 4</b><small>Sofía · 64 %</small></div>
+      <div class="tab"><b><i class="sem"></i>Firma</b><small>Entregas · 100 %</small></div>
+      <div class="tab"><b><i class="sem"></i>Reserva</b><small>Lista · 100 %</small></div>
+    </div>
+  </article>
+</section>
+</main>
+</div>
+<script>
+(function(){
+  function fit(){
+    document.querySelectorAll('[data-fit]').forEach(function(d){
+      d.style.transform='none';d.style.marginLeft='0';d.style.marginRight='0';
+      var w=d.offsetWidth,h=d.offsetHeight,avail=Math.max(320,window.innerWidth-32);
+      var s=Math.min(1,avail/w);
+      d.style.transform='scale('+s+')';
+      var m=(-(w-w*s)/2)+'px';d.style.marginLeft=m;d.style.marginRight=m;
+      d.parentElement.style.height=(h*s)+'px';
+    });
+  }
+  window.addEventListener('resize',fit);window.addEventListener('load',fit);fit();
+})();
+</script>
+</body>
+</html>

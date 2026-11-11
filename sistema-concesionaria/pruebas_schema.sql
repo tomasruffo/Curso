@@ -579,8 +579,8 @@ SELECT pg_temp.verificar('una nota de crédito por el total anula la factura aut
 INSERT INTO propuesta_agente (id, agente, modelo, tipo, payload, justificacion, datos_usados, creada_en) VALUES
     ('80000000-0000-0000-0000-000000000001', 'reposicion', 'claude-opus-5-5', 'ORDEN_COMPRA',
      '{"proveedor": "Alarmas SRL", "items": [{"sku": "ALR-X200", "cantidad": 15}]}',
-     'Hay 12 instalaciones agendadas en 10 días y 8 unidades disponibles; el proveedor tarda 5 días.',
-     '{"disponible": 8, "agendadas_10_dias": 12, "demora_proveedor_dias": 5}',
+     'Hay 14 en depósito y 12 reservadas para la agenda: quedan 2 libres; el proveedor tarda 5 días hábiles.',
+     '{"fisico": 14, "reservado": 12, "disponible": 2, "demora_proveedor_dias_habiles": 5}',
      now() - interval '30 days');          -- intenta antedatarla
 SELECT pg_temp.verificar('la base fija la fecha y el vencimiento de la propuesta (no los decide el agente)',
     (SELECT creada_en = now() AND vence_en = now() + interval '3 days'
