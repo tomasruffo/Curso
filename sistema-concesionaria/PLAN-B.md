@@ -173,6 +173,7 @@ Para cuando **el sistema funciona** desde los celulares pero **las tablets no se
 | **Una tablet se rompe, se pierde o la roban** | Usar la **tablet de reserva** (el operario entra con su PIN y ve su agenda al instante). **Revocar** la otra desde el back-office y **borrarla a distancia** desde el MDM. La tablet no guarda datos de clientes, así que no se pierde ni se expone nada |
 | **WhatsApp no funciona o bloquean el número** | Atender por teléfono y por el celular de la empresa, y cargar las órdenes con origen "Teléfono". Los avisos automáticos quedan en cola. El acta se puede mandar por email |
 | **ARCA no responde (no se puede facturar)** | Las entregas **siguen igual**: la factura queda en borrador ("para emitir") y se emite cuando ARCA vuelve. El reporte "órdenes entregadas sin factura" muestra qué falta. En la etapa 2, si la demora es larga, se vuelve a **manual asistida**. El régimen de contingencia de ARCA se define con el contador |
+| **La IA (agentes) no responde** | **No se frena nada**: los agentes sólo proponen. Las compras, los pedidos de WhatsApp y la agenda se manejan a mano, como en la etapa 1. Avisar a Sistemas |
 | **Una actualización del sistema anda mal** | Sistemas vuelve a la versión anterior desde el servidor (las tablets toman la web nueva sola). Mientras tanto, nivel 4 si hace falta |
 | **Se perdieron o se dañaron datos** | No tocar nada a mano. Sistemas restaura desde el backup al momento anterior al problema. Lo hecho entre el backup y la restauración se recarga desde el papel y el historial |
 

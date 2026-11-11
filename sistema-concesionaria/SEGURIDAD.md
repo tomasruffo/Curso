@@ -188,6 +188,8 @@ Muchos ataques no rompen el ingreso: **engañan al proceso de "perdí mi clave"*
 | Registro de seguridad inmutable | ✅ | | |
 | DNI/teléfono cifrados, búsqueda por HMAC | ✅ (estructura) | ✅ (cifrado con KMS) | ✅ KMS |
 | La agenda de las tablets no expone datos personales | ✅ | | |
+| Agentes de IA: sólo proponen; revisa una persona con el rol que corresponde; las propuestas vencen y no se editan ([AGENTES.md](AGENTES.md)) | ✅ | | |
+| Agentes de IA sin datos personales ni permiso de descifrar | | ✅ | ✅ KMS |
 | Passkeys, reautenticación, límites de intentos | | ✅ | |
 | Base no accesible desde internet, WAF, TLS | | | ✅ |
 

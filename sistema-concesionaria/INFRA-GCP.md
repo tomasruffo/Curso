@@ -9,7 +9,7 @@
 
 La mayoría de los incidentes en la nube no son "hackeos a Google". Son **errores de configuración**: un bucket público, una clave de cuenta de servicio subida a un repositorio, alguien con más permisos de los necesarios. Por eso este documento define **la configuración segura** y la fija con **políticas de organización que impiden esos errores**, aunque alguien se equivoque.
 
-**Verificado:** el esquema ([`schema.sql`](schema.sql)) y sus 73 pruebas corren con un usuario **sin superusuario**, igual que en Cloud SQL. Usa sólo funciones estándar y la extensión `btree_gist`, que Cloud SQL soporta.
+**Verificado:** el esquema ([`schema.sql`](schema.sql)) y sus 83 pruebas corren con un usuario **sin superusuario**, igual que en Cloud SQL. Usa sólo funciones estándar y la extensión `btree_gist`, que Cloud SQL soporta.
 
 ---
 
@@ -40,6 +40,7 @@ GCP no tiene región en Argentina, así que los datos quedan en Brasil y en Chil
 | Monitoreo y alertas | **Cloud Monitoring + Logging** | Chequeos de disponibilidad desde afuera, alertas de errores y de eventos de seguridad |
 | Auditoría | **Cloud Audit Logs** | Copia a un bucket con retención bloqueada en otro proyecto |
 | Imágenes de la aplicación | **Artifact Registry** | Escaneo de vulnerabilidades |
+| Agentes de IA ([AGENTES.md](AGENTES.md)) | **Cloud Run** + **Claude Models on Google Cloud** | Cuenta de servicio propia por agente con `roles/claude.user` (sin claves de API), **sin permiso de descifrar en el KMS**, sólo vistas sin datos personales |
 
 ---
 

@@ -7,10 +7,11 @@ Documento de diseño **v0.2**: lógica de negocio, arquitectura, seguridad, alta
 | `README.md` | Este documento: cómo funciona el sistema y por qué está diseñado así |
 | [`ETAPAS.md`](ETAPAS.md) | **Etapa 1** (digitalización, carga manual, facturación manual asistida) y **etapa 2** (WhatsApp, facturación automática, stock inteligente) |
 | [`SEGURIDAD.md`](SEGURIDAD.md) | Ingreso ultra seguro (passkeys por rol), datos sensibles cifrados, quién ve qué, recuperación de cuentas |
+| [`AGENTES.md`](AGENTES.md) | Agentes de IA (stock, mercadería, WhatsApp, agenda): proponen, una persona aprueba |
 | [`INFRA-GCP.md`](INFRA-GCP.md) | Cómo se arma en Google Cloud y la configuración segura (proyectos, políticas, red, claves, auditoría) |
 | [`PLAN-B.md`](PLAN-B.md) | Plan de emergencia por niveles (hotspot, celular, papel), para imprimir y tener en el taller |
 | [`schema.sql`](schema.sql) | Modelo de datos en PostgreSQL con las reglas de negocio aplicadas en la base |
-| [`pruebas_schema.sql`](pruebas_schema.sql) | 73 pruebas que verifican esas reglas (`psql -f schema.sql -f pruebas_schema.sql`) |
+| [`pruebas_schema.sql`](pruebas_schema.sql) | 83 pruebas que verifican esas reglas (`psql -f schema.sql -f pruebas_schema.sql`) |
 
 ---
 
@@ -23,7 +24,8 @@ Documento de diseño **v0.2**: lógica de negocio, arquitectura, seguridad, alta
 5. **Si falla internet**, hay un **plan de emergencia por niveles**: el router pasa solo a 4G; si no alcanza, los **celulares de la empresa comparten datos a las tablets**; si no, se trabaja **desde el celular**; y como último recurso, **papel**, que se carga después con la hora real. Ver [`PLAN-B.md`](PLAN-B.md).
 
 6. **Se factura desde la orden**: en la etapa 1 el sistema arma la factura y una persona la emite en ARCA (manual asistida); en la etapa 2 es automática. Ver [`ETAPAS.md`](ETAPAS.md).
-7. **Seguridad desde el día 1**: admin y facturación entran sólo con **passkey**, los datos personales se guardan **cifrados** y todo ingreso queda registrado. Ver [`SEGURIDAD.md`](SEGURIDAD.md).
+7. **Agentes de IA en la etapa 2** (stock, mercadería, WhatsApp, agenda): analizan y **proponen**; una persona con el rol que corresponde **aprueba**. Ver [`AGENTES.md`](AGENTES.md).
+8. **Seguridad desde el día 1**: admin y facturación entran sólo con **passkey**, los datos personales se guardan **cifrados** y todo ingreso queda registrado. Ver [`SEGURIDAD.md`](SEGURIDAD.md).
 
 **Decisión de arquitectura:** todo en la nube y **tablets online**. La app de la tablet es la misma web del back-office, sin servidores en el local y sin datos guardados en las tablets. Es lo más simple de construir y mantener. A cambio, **la conexión pasa a ser crítica**, y se cubre con redundancia de red y el plan de emergencia.
 
@@ -193,7 +195,7 @@ sequenceDiagram
 
 ### 4.5 Recomendación: acta de **recepción** también
 
-Conviene sumar un acta firmada **al recibir** el vehículo, con fotos del estado previo (rayones, golpes) y kilometraje. Es el mismo flujo de firma y evita los reclamos de "esto me lo rayaron ustedes". Está anotado como pregunta abierta (§11).
+Conviene sumar un acta firmada **al recibir** el vehículo, con fotos del estado previo (rayones, golpes) y kilometraje. Es el mismo flujo de firma y evita los reclamos de "esto me lo rayaron ustedes". Está anotado como pregunta abierta (§12).
 
 ---
 
@@ -401,7 +403,25 @@ La etapa 1 deja todo preparado para la 2: cada orden registra qué productos us�
 
 ---
 
-## 11. Preguntas abiertas (para cerrar la lógica)
+## 11. Agentes de IA
+
+El detalle está en [`AGENTES.md`](AGENTES.md). La idea central: **los agentes proponen, las personas aprueban**, y la base de datos lo hace cumplir (probado).
+
+| Agente | Qué propone | Quién aprueba |
+|---|---|---|
+| **Reposición de stock** (todas las noches) | Compras por proveedor con justificación y datos; ajustes cuando detecta diferencias | Administración |
+| **Recepción de mercadería** | Ingreso leído del remito o factura del proveedor, cruzado con la orden de compra | Administración, Coordinador |
+| **Pedidos por WhatsApp** | Borrador de orden con precios del catálogo + respuesta sugerida | Vendedor, Coordinador |
+| **Asistente de agenda** | Cómo reacomodar turnos cuando falta un operario o un repuesto | Coordinador |
+
+- Lo que es cálculo (stock, reservas, totales) **no es IA**: lo hacen el código y la base. La IA aporta criterio y lenguaje.
+- Los agentes **nunca ven datos personales** y sólo tienen **herramientas específicas**: nada de SQL libre.
+- Una propuesta **nace pendiente, vence, no se edita** y sólo la revisa el rol que corresponde.
+- Si la IA no responde, **nada se frena**: se trabaja a mano.
+
+---
+
+## 12. Preguntas abiertas (para cerrar la lógica)
 
 1. **¿Qué se instala?** Accesorios, alarmas, polarizado, GNC, multimedia… ¿Hay un catálogo con **duración estimada** de cada trabajo?
 2. **¿Cuántos operarios, boxes y sucursales?** ¿Los turnos son por hora o por día?
@@ -415,4 +435,4 @@ La etapa 1 deja todo preparado para la 2: cada orden registra qué productos us�
 10. **¿Ya tienen número de WhatsApp Business?** ¿Lo usan en un celular con la app o ya con la API?
 11. **¿Qué tan seguido** se corta internet o la luz hoy?
 12. **¿Qué texto de conformidad** firma el cliente? (validar con legal)
-13. **Facturación y stock**: ver las preguntas al final de [`ETAPAS.md`](ETAPAS.md) (condición frente al IVA, punto de venta exclusivo, proveedores, etc.)
+13. **Facturación, stock y agentes**: ver las preguntas al final de [`ETAPAS.md`](ETAPAS.md) y de [`AGENTES.md`](AGENTES.md) (condición frente al IVA, punto de venta exclusivo, proveedores, etc.)

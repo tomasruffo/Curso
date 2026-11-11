@@ -573,5 +573,55 @@ UPDATE comprobante SET estado = 'EMITIDO', punto_venta = 5, numero = 1, cae = '7
 SELECT pg_temp.verificar('una nota de crédito por el total anula la factura automáticamente',
     (SELECT estado = 'ANULADO' FROM comprobante WHERE id = '70000000-0000-0000-0000-000000000001'));
 
+-- ---------------------------------------------------------------------
+-- Agentes de IA: proponen, una persona aprueba
+-- ---------------------------------------------------------------------
+INSERT INTO propuesta_agente (id, agente, modelo, tipo, payload, justificacion, datos_usados, creada_en) VALUES
+    ('80000000-0000-0000-0000-000000000001', 'reposicion', 'claude-opus-5-5', 'ORDEN_COMPRA',
+     '{"proveedor": "Alarmas SRL", "items": [{"sku": "ALR-X200", "cantidad": 15}]}',
+     'Hay 12 instalaciones agendadas en 10 días y 8 unidades disponibles; el proveedor tarda 5 días.',
+     '{"disponible": 8, "agendadas_10_dias": 12, "demora_proveedor_dias": 5}',
+     now() - interval '30 days');          -- intenta antedatarla
+SELECT pg_temp.verificar('la base fija la fecha y el vencimiento de la propuesta (no los decide el agente)',
+    (SELECT creada_en = now() AND vence_en = now() + interval '3 days'
+       FROM propuesta_agente WHERE id = '80000000-0000-0000-0000-000000000001'));
+
+SELECT pg_temp.debe_fallar('un agente no puede crear una propuesta ya aprobada',
+    $$INSERT INTO propuesta_agente (agente, modelo, tipo, payload, justificacion, datos_usados, estado,
+                                    revisada_por, revisada_en)
+      VALUES ('reposicion', 'claude-opus-5-5', 'ORDEN_COMPRA', '{}', 'x', '{}', 'APROBADA',
+              'a0000000-0000-0000-0000-000000000007', now())$$, '23514');
+SELECT pg_temp.debe_fallar('un vendedor no puede aprobar una compra',
+    $$UPDATE propuesta_agente SET estado = 'APROBADA', revisada_por = 'a0000000-0000-0000-0000-000000000002',
+             revisada_en = now() WHERE id = '80000000-0000-0000-0000-000000000001'$$, '42501');
+SELECT pg_temp.debe_fallar('cambiar lo propuesto (ej. la cantidad) antes de aprobar',
+    $$UPDATE propuesta_agente SET payload = '{"proveedor": "Alarmas SRL", "items": [{"sku": "ALR-X200", "cantidad": 150}]}'
+       WHERE id = '80000000-0000-0000-0000-000000000001'$$, '23001');
+SELECT pg_temp.debe_fallar('rechazar sin decir por qué',
+    $$UPDATE propuesta_agente SET estado = 'RECHAZADA', revisada_por = 'a0000000-0000-0000-0000-000000000007',
+             revisada_en = now() WHERE id = '80000000-0000-0000-0000-000000000001'$$, '23514');
+SELECT pg_temp.debe_fallar('marcar como vencida una propuesta vigente',
+    $$UPDATE propuesta_agente SET estado = 'VENCIDA' WHERE id = '80000000-0000-0000-0000-000000000001'$$, '23514');
+
+UPDATE propuesta_agente SET estado = 'APROBADA', revisada_por = 'a0000000-0000-0000-0000-000000000007',
+       revisada_en = now() WHERE id = '80000000-0000-0000-0000-000000000001';
+SELECT pg_temp.verificar('Administración aprueba la compra propuesta',
+    (SELECT estado = 'APROBADA' FROM propuesta_agente WHERE id = '80000000-0000-0000-0000-000000000001'));
+SELECT pg_temp.debe_fallar('una propuesta aprobada no se vuelve a cambiar',
+    $$UPDATE propuesta_agente SET estado = 'RECHAZADA', motivo_rechazo = 'me arrepentí',
+             revisada_por = 'a0000000-0000-0000-0000-000000000007', revisada_en = now()
+       WHERE id = '80000000-0000-0000-0000-000000000001'$$, '23001');
+SELECT pg_temp.debe_fallar('borrar una propuesta (queda el registro de qué propuso cada agente)',
+    $$DELETE FROM propuesta_agente WHERE id = '80000000-0000-0000-0000-000000000001'$$, '23001');
+
+-- una propuesta vieja no se aprueba: tipo de prueba con vigencia cero
+INSERT INTO tipo_propuesta (tipo, descripcion, vigencia) VALUES ('PRUEBA_VENCE_YA', 'Sólo para pruebas', '0 seconds');
+INSERT INTO propuesta_aprobador (tipo, rol) VALUES ('PRUEBA_VENCE_YA', 'ADMINISTRACION');
+INSERT INTO propuesta_agente (id, agente, modelo, tipo, payload, justificacion, datos_usados) VALUES
+    ('80000000-0000-0000-0000-000000000002', 'reposicion', 'claude-opus-5-5', 'PRUEBA_VENCE_YA', '{}', 'x', '{}');
+SELECT pg_temp.debe_fallar('aprobar una propuesta vencida',
+    $$UPDATE propuesta_agente SET estado = 'APROBADA', revisada_por = 'a0000000-0000-0000-0000-000000000007',
+             revisada_en = now() WHERE id = '80000000-0000-0000-0000-000000000002'$$, '23514');
+
 \echo '>>> Todas las pruebas pasaron'
 ROLLBACK;

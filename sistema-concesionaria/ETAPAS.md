@@ -8,6 +8,7 @@
 | **Facturación** | **Manual asistida**: el sistema arma todo, una persona emite en ARCA y carga el CAE | **Automática** con ARCA |
 | **Stock** | Sólo catálogo de productos (se registra qué se usó en cada orden) | **Gestión inteligente**: reservas, alertas y compras sugeridas |
 | **Seguridad** | **Completa desde el día 1** ([SEGURIDAD.md](SEGURIDAD.md)) | Se suma lo de las integraciones (WhatsApp, certificado de ARCA) |
+| **Agentes de IA** | — (se junta el historial que van a necesitar) | Proponen compras, ingresos de mercadería, borradores de orden y reprogramaciones; **aprueba una persona** ([AGENTES.md](AGENTES.md)) |
 
 **Por qué la seguridad no espera a la etapa 2:** desde el primer día entran DNIs, teléfonos y facturas. Agregar cifrado y passkeys después, con datos ya cargados, es más caro y más riesgoso.
 
@@ -167,6 +168,8 @@ flowchart LR
 5. **Compra sugerida semanal**: un borrador de orden de compra por proveedor, listo para revisar.
 6. **Control de faltantes**: se compara el consumo real con el esperado de cada orden, y las diferencias generan una alerta. **Inventario cíclico**: cada semana se cuenta una parte, y los artículos de más valor con más frecuencia.
 7. **Costos**: costo promedio ponderado → **margen por orden**.
+
+**Agentes de IA sobre el stock** ([AGENTES.md](AGENTES.md)): el cálculo de los puntos anteriores lo hace el código. Encima, un **agente de reposición** revisa cada noche las excepciones y propone compras con justificación, y otro lee los **remitos de los proveedores** y propone el ingreso de mercadería. Siempre **aprueba una persona**.
 
 ### Criterios para dar por terminada la etapa 2
 

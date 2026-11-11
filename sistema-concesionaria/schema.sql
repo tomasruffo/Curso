@@ -26,6 +26,9 @@
 --  10. Facturación: un comprobante emitido no se modifica (se corrige con nota de crédito),
 --      sus totales tienen que coincidir con los ítems, la numeración es correlativa y
 --      sólo Administración puede emitir.
+--  11. Agentes de IA (AGENTES.md): los agentes sólo PROPONEN. Una propuesta nace pendiente,
+--      la revisa una persona con el rol que corresponde a ese tipo, vence si nadie la revisa,
+--      y lo propuesto no se puede editar después.
 --
 --  Contexto de auditoría: dentro de cada transacción la API ejecuta
 --      SET LOCAL app.usuario_id           = '<uuid>';
@@ -785,6 +788,106 @@ END
 $$;
 CREATE TRIGGER comprobante_item_proteger BEFORE INSERT OR UPDATE OR DELETE ON comprobante_item
     FOR EACH ROW EXECUTE FUNCTION comprobante_item_proteger();
+
+-- ---------------------------------------------------------------------
+-- Agentes de IA (ver AGENTES.md): los agentes PROPONEN, las personas APRUEBAN
+-- ---------------------------------------------------------------------
+-- Ningún agente escribe en tablas de negocio. Escribe una propuesta; al aprobarla, la API
+-- ejecuta lo propuesto EN NOMBRE DE LA PERSONA que aprobó, así que rigen todas las reglas de arriba.
+CREATE TYPE estado_propuesta AS ENUM ('PENDIENTE', 'APROBADA', 'RECHAZADA', 'VENCIDA');
+
+-- Qué puede proponer un agente y cuánto dura la propuesta (después, los datos ya cambiaron).
+CREATE TABLE tipo_propuesta (
+    tipo         text PRIMARY KEY,
+    descripcion  text NOT NULL,
+    vigencia     interval NOT NULL
+);
+-- Qué roles pueden revisar (aprobar o rechazar) cada tipo. Es la política, escrita como datos.
+CREATE TABLE propuesta_aprobador (
+    tipo  text NOT NULL REFERENCES tipo_propuesta (tipo),
+    rol   rol_usuario NOT NULL,
+    PRIMARY KEY (tipo, rol)
+);
+INSERT INTO tipo_propuesta (tipo, descripcion, vigencia) VALUES
+    ('ORDEN_COMPRA',       'Compra sugerida a un proveedor',                           '3 days'),
+    ('AJUSTE_STOCK',       'Corrección de stock por una diferencia detectada',         '2 days'),
+    ('INGRESO_MERCADERIA', 'Ingreso de mercadería leído de un remito o factura',       '2 days'),
+    ('BORRADOR_ORDEN',     'Orden armada a partir de un mensaje de WhatsApp',          '1 day'),
+    ('RESPUESTA_CLIENTE',  'Respuesta sugerida a un cliente por WhatsApp',             '4 hours'),
+    ('REPROGRAMACION',     'Cambio de turnos propuesto en el calendario',              '1 day');
+INSERT INTO propuesta_aprobador (tipo, rol) VALUES
+    ('ORDEN_COMPRA', 'ADMINISTRACION'),       ('ORDEN_COMPRA', 'ADMIN'),
+    ('AJUSTE_STOCK', 'ADMINISTRACION'),       ('AJUSTE_STOCK', 'ADMIN'),
+    ('INGRESO_MERCADERIA', 'ADMINISTRACION'), ('INGRESO_MERCADERIA', 'COORDINADOR'),
+    ('BORRADOR_ORDEN', 'VENDEDOR'),           ('BORRADOR_ORDEN', 'COORDINADOR'),
+    ('RESPUESTA_CLIENTE', 'VENDEDOR'),        ('RESPUESTA_CLIENTE', 'COORDINADOR'), ('RESPUESTA_CLIENTE', 'ENTREGA'),
+    ('REPROGRAMACION', 'COORDINADOR');
+
+CREATE TABLE propuesta_agente (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    agente          text NOT NULL,              -- 'reposicion', 'recepcion-whatsapp', 'agenda'...
+    modelo          text NOT NULL,              -- modelo de IA que la generó (auditoría)
+    tipo            text NOT NULL REFERENCES tipo_propuesta (tipo),
+    orden_id        uuid REFERENCES orden (id),
+    payload         jsonb NOT NULL,             -- lo que se propone hacer, exacto
+    justificacion   text NOT NULL,              -- por qué, en lenguaje simple
+    datos_usados    jsonb NOT NULL,             -- evidencia: lo que devolvieron las herramientas consultadas
+    estado          estado_propuesta NOT NULL DEFAULT 'PENDIENTE',
+    creada_en       timestamptz NOT NULL DEFAULT now(),
+    vence_en        timestamptz NOT NULL,       -- lo calcula la base según el tipo
+    revisada_por    uuid REFERENCES usuario (id),
+    revisada_en     timestamptz,
+    motivo_rechazo  text,
+    CONSTRAINT propuesta_revision CHECK (
+        (estado IN ('PENDIENTE', 'VENCIDA') AND revisada_por IS NULL AND revisada_en IS NULL)
+     OR (estado IN ('APROBADA', 'RECHAZADA') AND revisada_por IS NOT NULL AND revisada_en IS NOT NULL)),
+    CONSTRAINT propuesta_rechazo_con_motivo CHECK (estado <> 'RECHAZADA' OR motivo_rechazo IS NOT NULL)
+);
+CREATE INDEX propuesta_pendientes_idx ON propuesta_agente (tipo, creada_en) WHERE estado = 'PENDIENTE';
+
+CREATE FUNCTION propuesta_validar() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.estado <> 'PENDIENTE' THEN
+            RAISE EXCEPTION 'Una propuesta nace PENDIENTE: un agente no puede aprobarse a sí mismo'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        NEW.creada_en := now();                     -- un agente no puede antedatar ni alargar su propuesta
+        NEW.vence_en  := now() + (SELECT vigencia FROM tipo_propuesta WHERE tipo = NEW.tipo);
+        RETURN NEW;
+    END IF;
+
+    -- Sólo una propuesta pendiente cambia, y sólo su estado y los datos de la revisión.
+    IF OLD.estado <> 'PENDIENTE'
+       OR (to_jsonb(NEW) - 'estado' - 'revisada_por' - 'revisada_en' - 'motivo_rechazo')
+          <> (to_jsonb(OLD) - 'estado' - 'revisada_por' - 'revisada_en' - 'motivo_rechazo') THEN
+        RAISE EXCEPTION 'Lo propuesto no se edita y una propuesta revisada no cambia: se rechaza y se propone de nuevo'
+            USING ERRCODE = 'restrict_violation';
+    END IF;
+
+    IF NEW.estado = 'VENCIDA' AND OLD.vence_en > now() THEN
+        RAISE EXCEPTION 'La propuesta todavía no venció' USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.estado IN ('APROBADA', 'RECHAZADA') THEN
+        IF NOT EXISTS (SELECT 1 FROM usuario u
+                         JOIN propuesta_aprobador a ON a.rol = u.rol AND a.tipo = NEW.tipo
+                        WHERE u.id = NEW.revisada_por AND u.activo) THEN
+            RAISE EXCEPTION 'Ese usuario no puede revisar propuestas de tipo %', NEW.tipo
+                USING ERRCODE = 'insufficient_privilege';
+        END IF;
+    END IF;
+    IF NEW.estado = 'APROBADA' AND OLD.vence_en <= now() THEN
+        RAISE EXCEPTION 'La propuesta venció: los datos en que se basó pueden haber cambiado'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END
+$$;
+CREATE TRIGGER propuesta_validar BEFORE INSERT OR UPDATE ON propuesta_agente
+    FOR EACH ROW EXECUTE FUNCTION propuesta_validar();
+CREATE TRIGGER propuesta_sin_borrado BEFORE DELETE ON propuesta_agente
+    FOR EACH ROW EXECUTE FUNCTION prohibir_cambios();
 
 -- ---------------------------------------------------------------------
 -- Historial (append-only) y sincronización de tablets
