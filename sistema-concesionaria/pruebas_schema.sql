@@ -44,7 +44,9 @@ $$;
 INSERT INTO usuario (id, nombre, email, rol) VALUES
     ('a0000000-0000-0000-0000-000000000001', 'Coordinadora', 'coord@example.com',  'COORDINADOR'),
     ('a0000000-0000-0000-0000-000000000002', 'Vendedor',     'ventas@example.com', 'VENDEDOR'),
-    ('a0000000-0000-0000-0000-000000000005', 'Entregas',     'entrega@example.com','ENTREGA');
+    ('a0000000-0000-0000-0000-000000000005', 'Entregas',     'entrega@example.com','ENTREGA'),
+    ('a0000000-0000-0000-0000-000000000006', 'Admin',        'admin@example.com',  'ADMIN'),
+    ('a0000000-0000-0000-0000-000000000007', 'Administración','cuentas@example.com','ADMINISTRACION');
 INSERT INTO usuario (id, nombre, rol) VALUES
     ('a0000000-0000-0000-0000-000000000003', 'Operario Juan', 'OPERARIO'),
     ('a0000000-0000-0000-0000-000000000004', 'Operaria Ana',  'OPERARIO');
@@ -58,8 +60,11 @@ INSERT INTO puesto (id, nombre) VALUES ('b0000000-0000-0000-0000-000000000001', 
 INSERT INTO catalogo_trabajo (id, codigo, descripcion, duracion_estimada_min) VALUES
     ('c0000000-0000-0000-0000-000000000001', 'ALARMA', 'Instalación de alarma', 90);
 
-INSERT INTO cliente (id, nombre, doc_tipo, doc_numero, telefono_e164) VALUES
-    ('e0000000-0000-0000-0000-000000000001', 'María Pérez', 'DNI', '30123456', '+5491155551234');
+-- En producción la API cifra con el KMS y calcula el HMAC con otra clave.
+-- En las pruebas: bytes cualquiera como "cifrado" y sha256() como sustituto del HMAC.
+INSERT INTO cliente (id, nombre, doc_tipo, doc_cifrado, doc_hmac, doc_ultimos, telefono_cifrado, telefono_hmac) VALUES
+    ('e0000000-0000-0000-0000-000000000001', 'María Pérez', 'DNI', '\x0a0b0c'::bytea,
+     sha256('DNI:30123456'::bytea), '456', '\x0d0e0f'::bytea, sha256('+5491155551234'::bytea));
 
 -- ---------------------------------------------------------------------
 -- Patentes y vehículos
@@ -376,6 +381,197 @@ SELECT pg_temp.verificar('el historial marca lo hecho con acceso de emergencia (
              WHERE orden_id = '10000000-0000-0000-0000-000000000004' AND estado_nuevo = 'EN_CURSO'
                AND acceso_emergencia_id = '60000000-0000-0000-0000-000000000001'
                AND dispositivo_id IS NULL));
+
+-- ---------------------------------------------------------------------
+-- Seguridad de acceso
+-- ---------------------------------------------------------------------
+SELECT pg_temp.debe_fallar('un operario no puede entrar con contraseña',
+    $$INSERT INTO sesion (token_hash, usuario_id, nivel, expira_en)
+      VALUES (sha256('t-1'), 'a0000000-0000-0000-0000-000000000003', 'PASSWORD_TOTP', now() + interval '1 hour')$$, '42501');
+SELECT pg_temp.debe_fallar('el admin sólo entra con passkey (contraseña + TOTP no alcanza)',
+    $$INSERT INTO sesion (token_hash, usuario_id, nivel, expira_en)
+      VALUES (sha256('t-2'), 'a0000000-0000-0000-0000-000000000006', 'PASSWORD_TOTP', now() + interval '1 hour')$$, '42501');
+
+INSERT INTO sesion (id, token_hash, usuario_id, nivel, expira_en) VALUES
+    ('90000000-0000-0000-0000-000000000001', sha256('t-3'), 'a0000000-0000-0000-0000-000000000006',
+     'PASSKEY', now() + interval '8 hours');
+
+SELECT pg_temp.debe_fallar('sesión de admin más larga que 8 horas',
+    $$INSERT INTO sesion (token_hash, usuario_id, nivel, expira_en)
+      VALUES (sha256('t-4'), 'a0000000-0000-0000-0000-000000000006', 'PASSKEY', now() + interval '10 hours')$$, '23514');
+SELECT pg_temp.debe_fallar('PIN sin una tablet enrolada',
+    $$INSERT INTO sesion (token_hash, usuario_id, nivel, expira_en)
+      VALUES (sha256('t-5'), 'a0000000-0000-0000-0000-000000000003', 'PIN_DISPOSITIVO', now() + interval '1 hour')$$, '23514');
+
+INSERT INTO sesion (id, token_hash, usuario_id, nivel, dispositivo_id, expira_en) VALUES
+    ('90000000-0000-0000-0000-000000000002', sha256('t-6'), 'a0000000-0000-0000-0000-000000000003',
+     'PIN_DISPOSITIVO', 'd0000000-0000-0000-0000-000000000001', now() + interval '12 hours');
+
+-- código de emergencia (generado en la sección anterior, todavía sin usar, vence en 8 h)
+INSERT INTO sesion (id, token_hash, usuario_id, nivel, acceso_emergencia_id, expira_en) VALUES
+    ('90000000-0000-0000-0000-000000000003', sha256('t-7'), 'a0000000-0000-0000-0000-000000000003',
+     'CODIGO_EMERGENCIA', '60000000-0000-0000-0000-000000000001', now() + interval '12 hours');
+SELECT pg_temp.verificar('la sesión de emergencia no dura más que el código',
+    (SELECT s.expira_en = a.vence_en FROM sesion s JOIN acceso_emergencia a ON a.id = s.acceso_emergencia_id
+      WHERE s.id = '90000000-0000-0000-0000-000000000003'));
+SELECT pg_temp.debe_fallar('un código de emergencia sirve una sola vez',
+    $$INSERT INTO sesion (token_hash, usuario_id, nivel, acceso_emergencia_id, expira_en)
+      VALUES (sha256('t-8'), 'a0000000-0000-0000-0000-000000000003', 'CODIGO_EMERGENCIA',
+              '60000000-0000-0000-0000-000000000001', now() + interval '1 hour')$$, '42501');
+
+UPDATE dispositivo SET activa = false WHERE id = 'd0000000-0000-0000-0000-000000000001';   -- tablet robada
+SELECT pg_temp.verificar('revocar una tablet corta al instante sus sesiones',
+    (SELECT revocada_en IS NOT NULL FROM sesion WHERE id = '90000000-0000-0000-0000-000000000002'));
+SELECT pg_temp.debe_fallar('no se puede entrar desde una tablet revocada',
+    $$INSERT INTO sesion (token_hash, usuario_id, nivel, dispositivo_id, expira_en)
+      VALUES (sha256('t-9'), 'a0000000-0000-0000-0000-000000000003', 'PIN_DISPOSITIVO',
+              'd0000000-0000-0000-0000-000000000001', now() + interval '1 hour')$$, '42501');
+
+INSERT INTO sesion (id, token_hash, usuario_id, nivel, expira_en) VALUES
+    ('90000000-0000-0000-0000-000000000004', sha256('t-10'), 'a0000000-0000-0000-0000-000000000005',
+     'PASSKEY', now() + interval '4 hours');
+UPDATE usuario SET rol = 'VENDEDOR' WHERE id = 'a0000000-0000-0000-0000-000000000005';
+SELECT pg_temp.verificar('cambiar el rol de alguien corta sus sesiones (los permisos nuevos rigen ya)',
+    (SELECT revocada_en IS NOT NULL FROM sesion WHERE id = '90000000-0000-0000-0000-000000000004'));
+
+UPDATE usuario SET activo = false WHERE id = 'a0000000-0000-0000-0000-000000000004';     -- baja de Ana
+SELECT pg_temp.debe_fallar('un usuario dado de baja no puede entrar',
+    $$INSERT INTO sesion (token_hash, usuario_id, nivel, dispositivo_id, expira_en)
+      VALUES (sha256('t-11'), 'a0000000-0000-0000-0000-000000000004', 'PIN_DISPOSITIVO',
+              'd0000000-0000-0000-0000-000000000002', now() + interval '1 hour')$$, '42501');
+
+UPDATE usuario SET intentos_fallidos = 5, bloqueado_hasta = now() + interval '15 minutes'
+ WHERE id = 'a0000000-0000-0000-0000-000000000001';
+SELECT pg_temp.debe_fallar('usuario bloqueado por intentos fallidos no puede entrar',
+    $$INSERT INTO sesion (token_hash, usuario_id, nivel, expira_en)
+      VALUES (sha256('t-12'), 'a0000000-0000-0000-0000-000000000001', 'PASSKEY', now() + interval '1 hour')$$, '42501');
+
+SELECT pg_temp.debe_fallar('una sesión revocada no se reactiva',
+    $$UPDATE sesion SET revocada_en = NULL WHERE id = '90000000-0000-0000-0000-000000000002'$$, '23001');
+SELECT pg_temp.debe_fallar('una sesión no se puede extender',
+    $$UPDATE sesion SET expira_en = expira_en + interval '1 day' WHERE id = '90000000-0000-0000-0000-000000000001'$$, '23001');
+
+SELECT pg_temp.verificar('ingresos, revocaciones, cambio de rol, baja y bloqueo quedan en el registro de seguridad',
+    (SELECT count(*) FILTER (WHERE tipo = 'SESION_INICIADA') = 4
+        AND count(*) FILTER (WHERE tipo = 'SESION_REVOCADA') = 2
+        AND count(*) FILTER (WHERE tipo = 'EQUIPO_REVOCADO') = 1
+        AND count(*) FILTER (WHERE tipo = 'ROL_CAMBIADO') = 1
+        AND count(*) FILTER (WHERE tipo = 'USUARIO_DADO_DE_BAJA') = 1
+        AND count(*) FILTER (WHERE tipo = 'USUARIO_BLOQUEADO') = 1
+       FROM evento_seguridad));
+SELECT pg_temp.debe_fallar('borrar el registro de seguridad',
+    $$DELETE FROM evento_seguridad$$, '23001');
+SELECT pg_temp.debe_fallar('borrar un usuario (se da de baja, no se borra)',
+    $$DELETE FROM usuario WHERE id = 'a0000000-0000-0000-0000-000000000004'$$, '23001');
+
+-- ---------------------------------------------------------------------
+-- Datos sensibles
+-- ---------------------------------------------------------------------
+SELECT pg_temp.debe_fallar('DNI duplicado detectado sin descifrar (por HMAC)',
+    $$INSERT INTO cliente (nombre, doc_tipo, doc_cifrado, doc_hmac)
+      VALUES ('María P.', 'DNI', '\x99'::bytea, sha256('DNI:30123456'::bytea))$$, '23505');
+SELECT pg_temp.verificar('la agenda que baja a las tablets no expone documento ni teléfono',
+    NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'vista_agenda'
+                   AND (column_name LIKE '%doc%' OR column_name LIKE '%telefono%' OR column_name LIKE '%email%')));
+
+-- ---------------------------------------------------------------------
+-- Facturación manual asistida
+-- ---------------------------------------------------------------------
+-- Borrador armado desde la OT-1000: 1 alarma $100.000 + 21 %, 2 h de mano de obra $25.000 + 10,5 %
+INSERT INTO comprobante (id, orden_id, cliente_id, tipo, receptor_nombre, receptor_condicion_iva, neto, iva, total) VALUES
+    ('70000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001',
+     'e0000000-0000-0000-0000-000000000001', 'FACTURA_B', 'María Pérez', 'CONSUMIDOR_FINAL',
+     150000.00, 26250.00, 176250.00);
+INSERT INTO comprobante_item (comprobante_id, descripcion, cantidad, precio_unitario, alicuota_iva) VALUES
+    ('70000000-0000-0000-0000-000000000001', 'Alarma con sensor volumétrico', 1, 100000.00, 21),
+    ('70000000-0000-0000-0000-000000000001', 'Mano de obra instalación (h)',  2,  25000.00, 10.5);
+
+SELECT pg_temp.debe_fallar('un vendedor no puede emitir facturas',
+    $$UPDATE comprobante SET estado = 'EMITIDO', punto_venta = 5, numero = 1, cae = '75123456789012',
+             cae_vence = current_date + 10, fecha_emision = current_date,
+             emitido_por = 'a0000000-0000-0000-0000-000000000002'
+       WHERE id = '70000000-0000-0000-0000-000000000001'$$, '42501');
+SELECT pg_temp.debe_fallar('emitir con totales que no coinciden con los ítems',
+    $$UPDATE comprobante SET estado = 'EMITIDO', iva = 26000.00, total = 176000.00, punto_venta = 5, numero = 1,
+             cae = '75123456789012', cae_vence = current_date + 10, fecha_emision = current_date,
+             emitido_por = 'a0000000-0000-0000-0000-000000000007'
+       WHERE id = '70000000-0000-0000-0000-000000000001'$$, '23514');
+SELECT pg_temp.debe_fallar('emitir sin cargar el CAE',
+    $$UPDATE comprobante SET estado = 'EMITIDO', punto_venta = 5, numero = 1,
+             cae_vence = current_date + 10, fecha_emision = current_date,
+             emitido_por = 'a0000000-0000-0000-0000-000000000007'
+       WHERE id = '70000000-0000-0000-0000-000000000001'$$, '23514');
+SELECT pg_temp.debe_fallar('CAE mal tipeado (no tiene 14 dígitos)',
+    $$UPDATE comprobante SET cae = '7512345678901' WHERE id = '70000000-0000-0000-0000-000000000001'$$, '23514');
+
+UPDATE comprobante SET estado = 'EMITIDO', punto_venta = 5, numero = 1, cae = '75123456789012',
+       cae_vence = current_date + 10, fecha_emision = current_date,
+       emitido_por = 'a0000000-0000-0000-0000-000000000007'
+ WHERE id = '70000000-0000-0000-0000-000000000001';
+SELECT pg_temp.verificar('Administración emite la factura con los datos de ARCA',
+    (SELECT estado = 'EMITIDO' AND emitido_en IS NOT NULL FROM comprobante WHERE id = '70000000-0000-0000-0000-000000000001'));
+
+SELECT pg_temp.debe_fallar('modificar una factura emitida',
+    $$UPDATE comprobante SET receptor_nombre = 'Otro' WHERE id = '70000000-0000-0000-0000-000000000001'$$, '23001');
+SELECT pg_temp.debe_fallar('agregar ítems a una factura emitida',
+    $$INSERT INTO comprobante_item (comprobante_id, descripcion, cantidad, precio_unitario, alicuota_iva)
+      VALUES ('70000000-0000-0000-0000-000000000001', 'Extra', 1, 1000, 21)$$, '23001');
+SELECT pg_temp.debe_fallar('borrar una factura emitida',
+    $$DELETE FROM comprobante WHERE id = '70000000-0000-0000-0000-000000000001'$$, '23001');
+SELECT pg_temp.debe_fallar('anular una factura sin nota de crédito',
+    $$UPDATE comprobante SET estado = 'ANULADO' WHERE id = '70000000-0000-0000-0000-000000000001'$$, '23001');
+
+-- Segunda factura (OT-1002): $80.000 + 21 %
+INSERT INTO comprobante (id, orden_id, cliente_id, tipo, receptor_nombre, receptor_condicion_iva, neto, iva, total) VALUES
+    ('70000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000003',
+     'e0000000-0000-0000-0000-000000000001', 'FACTURA_B', 'María Pérez', 'CONSUMIDOR_FINAL',
+     80000.00, 16800.00, 96800.00);
+INSERT INTO comprobante_item (comprobante_id, descripcion, cantidad, precio_unitario, alicuota_iva) VALUES
+    ('70000000-0000-0000-0000-000000000002', 'Polarizado', 1, 80000.00, 21);
+SELECT pg_temp.debe_fallar('número de factura salteado (se tipeó 3 en vez de 2)',
+    $$UPDATE comprobante SET estado = 'EMITIDO', punto_venta = 5, numero = 3, cae = '75123456789013',
+             cae_vence = current_date + 10, fecha_emision = current_date,
+             emitido_por = 'a0000000-0000-0000-0000-000000000007'
+       WHERE id = '70000000-0000-0000-0000-000000000002'$$, '23514');
+UPDATE comprobante SET estado = 'EMITIDO', punto_venta = 5, numero = 2, cae = '75123456789013',
+       cae_vence = current_date + 10, fecha_emision = current_date,
+       emitido_por = 'a0000000-0000-0000-0000-000000000007'
+ WHERE id = '70000000-0000-0000-0000-000000000002';
+
+-- Notas de crédito
+SELECT pg_temp.debe_fallar('nota de crédito sin factura asociada',
+    $$INSERT INTO comprobante (orden_id, cliente_id, tipo, receptor_nombre, receptor_condicion_iva, neto, iva, total)
+      VALUES ('10000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000000001', 'NOTA_CREDITO_B',
+              'María Pérez', 'CONSUMIDOR_FINAL', 0, 0, 0)$$, '23514');
+
+INSERT INTO comprobante (id, orden_id, cliente_id, tipo, comprobante_asociado_id, receptor_nombre,
+                         receptor_condicion_iva, neto, iva, total) VALUES
+    ('70000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000003',
+     'e0000000-0000-0000-0000-000000000001', 'NOTA_CREDITO_B', '70000000-0000-0000-0000-000000000002',
+     'María Pérez', 'CONSUMIDOR_FINAL', 200000.00, 42000.00, 242000.00);
+INSERT INTO comprobante_item (comprobante_id, descripcion, cantidad, precio_unitario, alicuota_iva) VALUES
+    ('70000000-0000-0000-0000-000000000004', 'Devolución', 1, 200000.00, 21);
+SELECT pg_temp.debe_fallar('nota de crédito por más que la factura',
+    $$UPDATE comprobante SET estado = 'EMITIDO', punto_venta = 5, numero = 1, cae = '75123456789014',
+             cae_vence = current_date + 10, fecha_emision = current_date,
+             emitido_por = 'a0000000-0000-0000-0000-000000000007'
+       WHERE id = '70000000-0000-0000-0000-000000000004'$$, '23514');
+
+INSERT INTO comprobante (id, orden_id, cliente_id, tipo, comprobante_asociado_id, receptor_nombre,
+                         receptor_condicion_iva, neto, iva, total) VALUES
+    ('70000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001',
+     'e0000000-0000-0000-0000-000000000001', 'NOTA_CREDITO_B', '70000000-0000-0000-0000-000000000001',
+     'María Pérez', 'CONSUMIDOR_FINAL', 150000.00, 26250.00, 176250.00);
+INSERT INTO comprobante_item (comprobante_id, descripcion, cantidad, precio_unitario, alicuota_iva) VALUES
+    ('70000000-0000-0000-0000-000000000003', 'Alarma con sensor volumétrico', 1, 100000.00, 21),
+    ('70000000-0000-0000-0000-000000000003', 'Mano de obra instalación (h)',  2,  25000.00, 10.5);
+UPDATE comprobante SET estado = 'EMITIDO', punto_venta = 5, numero = 1, cae = '75123456789015',
+       cae_vence = current_date + 10, fecha_emision = current_date,
+       emitido_por = 'a0000000-0000-0000-0000-000000000007'
+ WHERE id = '70000000-0000-0000-0000-000000000003';
+SELECT pg_temp.verificar('una nota de crédito por el total anula la factura automáticamente',
+    (SELECT estado = 'ANULADO' FROM comprobante WHERE id = '70000000-0000-0000-0000-000000000001'));
 
 \echo '>>> Todas las pruebas pasaron'
 ROLLBACK;

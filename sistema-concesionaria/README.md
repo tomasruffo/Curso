@@ -1,23 +1,28 @@
 # Sistema de órdenes de instalación para concesionaria
 
-Documento de diseño **v0.1**: lógica de negocio, arquitectura, seguridad, alta disponibilidad y plan B.
+Documento de diseño **v0.2**: lógica de negocio, arquitectura, seguridad, alta disponibilidad, plan de emergencia y etapas.
 
 | Archivo | Qué es |
 |---|---|
 | `README.md` | Este documento: cómo funciona el sistema y por qué está diseñado así |
+| [`ETAPAS.md`](ETAPAS.md) | **Etapa 1** (digitalización, carga manual, facturación manual asistida) y **etapa 2** (WhatsApp, facturación automática, stock inteligente) |
+| [`SEGURIDAD.md`](SEGURIDAD.md) | Ingreso ultra seguro (passkeys por rol), datos sensibles cifrados, quién ve qué, recuperación de cuentas |
 | [`PLAN-B.md`](PLAN-B.md) | Plan de emergencia por niveles (hotspot, celular, papel), para imprimir y tener en el taller |
 | [`schema.sql`](schema.sql) | Modelo de datos en PostgreSQL con las reglas de negocio aplicadas en la base |
-| [`pruebas_schema.sql`](pruebas_schema.sql) | 42 pruebas que verifican esas reglas (`psql -f schema.sql -f pruebas_schema.sql`) |
+| [`pruebas_schema.sql`](pruebas_schema.sql) | 73 pruebas que verifican esas reglas (`psql -f schema.sql -f pruebas_schema.sql`) |
 
 ---
 
 ## 0. Resumen
 
-1. **El cliente escribe por WhatsApp**. El mensaje entra a una bandeja en el sistema y quien atiende arma la **orden** desde la conversación. La orden queda asociada a un **cliente** (por teléfono y DNI/CUIT) y a un **vehículo** (por **patente**, o por VIN si es un 0km sin patente).
+1. **El cliente pide la instalación** (WhatsApp, teléfono o mostrador) y el vendedor carga la **orden**. En la etapa 2, la orden se arma directamente desde el chat de WhatsApp conectado al sistema. La orden queda asociada a un **cliente** (por teléfono y DNI/CUIT) y a un **vehículo** (por **patente**, o por VIN si es un 0km sin patente).
 2. **El coordinador asigna la instalación en un calendario**: arrastra la orden al horario de un operario y un box. El sistema no permite superposiciones. La orden pasa sola a `AGENDADA` y **le llega al operario a la tablet**.
 3. **El operario trabaja desde la tablet**: inicia, marca los ítems, saca fotos y cierra.
 4. **En la entrega, el cliente firma en una tablet de firma** en modo kiosco. Se guarda un acta inmutable con hash, trazos de la firma, hora y dispositivo, y el cliente recibe el PDF por WhatsApp.
 5. **Si falla internet**, hay un **plan de emergencia por niveles**: el router pasa solo a 4G; si no alcanza, los **celulares de la empresa comparten datos a las tablets**; si no, se trabaja **desde el celular**; y como último recurso, **papel**, que se carga después con la hora real. Ver [`PLAN-B.md`](PLAN-B.md).
+
+6. **Se factura desde la orden**: en la etapa 1 el sistema arma la factura y una persona la emite en ARCA (manual asistida); en la etapa 2 es automática. Ver [`ETAPAS.md`](ETAPAS.md).
+7. **Seguridad desde el día 1**: admin y facturación entran sólo con **passkey**, los datos personales se guardan **cifrados** y todo ingreso queda registrado. Ver [`SEGURIDAD.md`](SEGURIDAD.md).
 
 **Decisión de arquitectura:** todo en la nube y **tablets online**. La app de la tablet es la misma web del back-office, sin servidores en el local y sin datos guardados en las tablets. Es lo más simple de construir y mantener. A cambio, **la conexión pasa a ser crítica**, y se cubre con redundancia de red y el plan de emergencia.
 
@@ -32,7 +37,8 @@ Documento de diseño **v0.1**: lógica de negocio, arquitectura, seguridad, alta
 | **Coordinador de taller** | Asigna turnos en el calendario, reprograma y es el **responsable de emergencia** del turno | Back-office web (PC) |
 | **Operario** | Recibe sus órdenes, ejecuta, marca ítems, saca fotos y cierra | Tablet de operario |
 | **Entregas** | Presenta el acta al cliente en la tablet de firma | Back-office + tablet de firma |
-| **Admin** | Usuarios, tablets, catálogo de trabajos, permisos | Back-office web |
+| **Administración** | Emite facturas y notas de crédito | Back-office web (PC de la empresa) |
+| **Admin** | Usuarios, tablets, catálogo de trabajos, permisos | Back-office web (PC de la empresa) |
 
 ---
 
@@ -54,13 +60,19 @@ erDiagram
     DISPOSITIVO ||--o{ OPERACION_SYNC : envía
     DISPOSITIVO ||--o{ ACTA_ENTREGA : "se firmó en"
     USUARIO  ||--o{ ACCESO_EMERGENCIA : "habilitado (nivel 3)"
+    PRODUCTO ||--o{ ORDEN_ITEM : "artículo usado"
+    ORDEN    ||--o{ COMPROBANTE : "se factura en"
+    COMPROBANTE ||--|{ COMPROBANTE_ITEM : contiene
+    COMPROBANTE |o--o{ COMPROBANTE : "nota de crédito de"
+    USUARIO  ||--o{ SESION : "ingresa con"
+    USUARIO  ||--o{ CREDENCIAL_PASSKEY : registra
 ```
 
 ### Reglas clave del dominio
 
 - **Patente**: se guarda normalizada (`ab-123 cd` → `AB123CD`), con validación de formato argentino (viejo `ABC123`, Mercosur `AB123CD` y motos) y es **única**. Así cada vehículo tiene su historial de órdenes.
 - **0km sin patente**: en una concesionaria pasa seguido. El vehículo se identifica por **VIN** (número de chasis) y la patente se completa después. La regla es "patente **o** VIN, al menos uno".
-- **Cliente**: se busca por **teléfono de WhatsApp** (formato E.164, ej. `+5491155551234`) al entrar el mensaje, y se identifica de forma única por **DNI/CUIT**. El teléfono no es único: una familia o empresa puede compartirlo.
+- **Cliente**: se identifica de forma única por **DNI/CUIT** y se busca por **teléfono** (formato E.164, ej. `+5491155551234`). El teléfono no es único: una familia o empresa puede compartirlo. **DNI, teléfono y email se guardan cifrados**; la búsqueda y el control de duplicados se hacen con una huella (HMAC) sin descifrar ([`SEGURIDAD.md`](SEGURIDAD.md)).
 - **Patente ya asociada a otro cliente**: el sistema avisa ("¿cambio de titular?") y no bloquea.
 - **Orden mínima para confirmar**: cliente + vehículo + al menos un ítem. Un *borrador* puede existir incompleto, porque nace de un chat donde los datos llegan de a poco.
 - **Las órdenes no se borran, se cancelan.** Los turnos tampoco se borran. El acta y el historial son inmutables.
@@ -107,7 +119,9 @@ Cada cambio queda en `evento_orden` con **quién**, **desde qué tablet** y **cu
 
 ## 4. Flujos
 
-### 4.1 WhatsApp → orden
+### 4.1 WhatsApp → orden (etapa 2)
+
+> En la **etapa 1** la orden se carga a mano: el vendedor atiende el WhatsApp Business del celular de la empresa y copia los datos al sistema. Este flujo es el de la etapa 2, con WhatsApp conectado.
 
 ```mermaid
 sequenceDiagram
@@ -307,28 +321,20 @@ flowchart TB
 
 ## 7. Seguridad
 
-**Identidad y acceso**
-- Back-office: usuario + contraseña (argon2id) + **2FA obligatorio** para admin y coordinadores.
-- Tablets y celulares de la empresa: **cada equipo se enrola** y genera un par de claves que queda registrado (`dispositivo.clave_publica`). La API **sólo acepta equipos enrolados y activos**. Por eso al operario le alcanza un PIN corto: el PIN sin la tablet no sirve, y la tablet sin el PIN tampoco.
-- **Acceso de emergencia** (nivel 3 del plan) desde un celular personal: código **por persona** que habilita un coordinador o admin, que **vence en 12 h como máximo** y da **permisos mínimos** (ver la propia agenda y marcar avance, **nunca** la firma del cliente). Todo lo hecho así queda **marcado en el historial** (`acceso_emergencia`).
-- **Roles**: el operario ve **sólo sus órdenes**; la tablet de firma ve **sólo la orden que se le envió**; quien entra con acceso de emergencia ve **sólo su agenda**; el vendedor no puede tocar actas.
-- Tokens de corta duración atados al dispositivo. **Revocar una tablet** (pérdida o robo) corta su acceso al instante y el MDM la borra.
+El detalle completo está en [`SEGURIDAD.md`](SEGURIDAD.md). Lo central:
 
-**Datos**
-- TLS en todo (HSTS). Cifrado en reposo en la base, el storage y los backups.
-- Las tablets **no guardan datos de clientes**: si se pierde una, no hay nada que robar (igual se revoca y se borra a distancia).
-- Webhooks de WhatsApp: se verifica la **firma HMAC** (`X-Hub-Signature-256`). Si no coincide, el mensaje se descarta.
-- Secretos en un gestor de secretos, nunca en el código.
+| Quién | Cómo entra |
+|---|---|
+| Admin · Administración | **Sólo passkey o llave física** (resistente al phishing), sesión de 8 h como máximo, desde PCs de la empresa |
+| Coordinador · Vendedor · Entregas | Passkey, o contraseña + app autenticadora (nunca SMS) |
+| Operario | Tablet enrolada + PIN de 6 dígitos |
+| Emergencia | Código de un solo uso, ≤ 12 h, permisos mínimos |
 
-**Trazabilidad e integridad**
-- Historial de la orden **append-only** (no se edita ni se borra; lo garantiza la base).
-- Acta de entrega **inmutable** con hash verificado por la base + storage con bloqueo de objetos.
-
-**Protección operativa**
-- WAF y límites de tasa en la API.
-- Backups **en otra cuenta/región, inmutables**, para que un ransomware o un error humano no los alcance.
-- **Prueba de restauración mensual**: un backup que nunca se restauró no es un backup.
-- Ley 25.326: aviso de privacidad al cliente, acceso mínimo necesario y, si corresponde, inscripción de la base ante la AAIP (verificar con legal).
+- **La base de datos hace cumplir esta política** (`politica_acceso`). Además, dar de baja a alguien, cambiarle el rol o revocar su tablet **corta sus sesiones al instante**.
+- **DNI/CUIT, teléfono y email cifrados** con un KMS: una copia robada de la base no sirve.
+- **Cada uno ve lo mínimo**: el operario nunca ve documento ni teléfono; el DNI completo sólo lo ve Administración, confirmando con passkey y quedando registrado.
+- **Acciones críticas** (facturar, exportar, cambiar permisos) **piden confirmar con passkey** en el momento.
+- **Registro de seguridad inmutable** y alertas automáticas.
 
 ---
 
@@ -374,14 +380,19 @@ Dos cosas baratas que valen oro:
 
 ---
 
-## 10. Plan por fases
+## 10. Etapas
 
-| Fase | Entrega | Criterio de "listo" |
-|---|---|---|
-| **0. Preparación** | Relevamiento (preguntas §11), compra de tablets + MDM + router dual-WAN + UPS, **2 celulares de emergencia** con la red `TALLER-EMERGENCIA`, medición del Wi‑Fi en cada box, alta de WhatsApp Business API y plantillas, talonarios y planillas de emergencia impresos | Hardware enrolado; plantillas aprobadas; **primer simulacro de nivel 2 en ≤ 10 min** |
-| **1. MVP** | Back-office (clientes, vehículos, órdenes, calendario, **carga desde papel, acceso de emergencia**), app web de operario y de firma (**también usable en celular**), acta PDF, email de agenda diaria | Una semana real en el taller sin papel y sin quejas de "se traba" |
-| **2. WhatsApp integrado** | Bandeja de chats, crear orden desde el chat, avisos automáticos (confirmación, recordatorio, listo, acta) | Las órdenes nacen en el chat |
-| **3. Operación madura** | Tablero de tablets, reportes (tiempos, productividad), bot de WhatsApp, acta de recepción y, si los cortes son frecuentes, **tolerancia a cortes** en la app (§5) | Métricas visibles para la gerencia |
+El detalle, con criterios de "terminado" y el diseño de facturación y stock, está en [`ETAPAS.md`](ETAPAS.md).
+
+| Etapa 1 · Digitalización | Etapa 2 · Automatización |
+|---|---|
+| Todo digital, **una sola base de datos** | **2a** WhatsApp Business conectado + avisos automáticos |
+| Flujos principales: órdenes, calendario, tablet, firma | **2b** Facturación automática con ARCA (arranque gradual) |
+| **Carga manual** de órdenes | **2c** Gestión inteligente de stock (reservas por agenda, alertas, compra sugerida) |
+| **Facturación manual asistida** (el sistema arma, una persona emite en ARCA) | |
+| **Seguridad completa** y plan de emergencia | |
+
+La etapa 1 deja todo preparado para la 2: cada orden registra qué productos usó (historial para el stock), la factura ya tiene la estructura de ARCA (sólo cambia quién la completa) y el teléfono del cliente ya se puede buscar al instante.
 
 **Recomendación:** antes de construir, hacer un **prototipo de la app de tablet** y probarlo una semana con 1–2 operarios reales. Es la parte con más riesgo de rechazo.
 
@@ -401,3 +412,4 @@ Dos cosas baratas que valen oro:
 10. **¿Ya tienen número de WhatsApp Business?** ¿Lo usan en un celular con la app o ya con la API?
 11. **¿Qué tan seguido** se corta internet o la luz hoy?
 12. **¿Qué texto de conformidad** firma el cliente? (validar con legal)
+13. **Facturación y stock**: ver las preguntas al final de [`ETAPAS.md`](ETAPAS.md) (condición frente al IVA, punto de venta exclusivo, proveedores, etc.)
