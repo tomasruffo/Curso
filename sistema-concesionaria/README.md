@@ -5,9 +5,9 @@ Documento de diseño **v0.1**: lógica de negocio, arquitectura, seguridad, alta
 | Archivo | Qué es |
 |---|---|
 | `README.md` | Este documento: cómo funciona el sistema y por qué está diseñado así |
-| [`PLAN-B.md`](PLAN-B.md) | Plan de contingencia operativo, para imprimir y tener en el taller |
+| [`PLAN-B.md`](PLAN-B.md) | Plan de emergencia por niveles (hotspot, celular, papel), para imprimir y tener en el taller |
 | [`schema.sql`](schema.sql) | Modelo de datos en PostgreSQL con las reglas de negocio aplicadas en la base |
-| [`pruebas_schema.sql`](pruebas_schema.sql) | 31 pruebas que verifican esas reglas (`psql -f schema.sql -f pruebas_schema.sql`) |
+| [`pruebas_schema.sql`](pruebas_schema.sql) | 42 pruebas que verifican esas reglas (`psql -f schema.sql -f pruebas_schema.sql`) |
 
 ---
 
@@ -15,11 +15,11 @@ Documento de diseño **v0.1**: lógica de negocio, arquitectura, seguridad, alta
 
 1. **El cliente escribe por WhatsApp**. El mensaje entra a una bandeja en el sistema y quien atiende arma la **orden** desde la conversación. La orden queda asociada a un **cliente** (por teléfono y DNI/CUIT) y a un **vehículo** (por **patente**, o por VIN si es un 0km sin patente).
 2. **El coordinador asigna la instalación en un calendario**: arrastra la orden al horario de un operario y un box. El sistema no permite superposiciones. La orden pasa sola a `AGENDADA` y **le llega al operario a la tablet**.
-3. **El operario trabaja desde la tablet**: inicia, marca los ítems, saca fotos y cierra. **La tablet funciona aunque no haya internet.**
+3. **El operario trabaja desde la tablet**: inicia, marca los ítems, saca fotos y cierra.
 4. **En la entrega, el cliente firma en una tablet de firma** en modo kiosco. Se guarda un acta inmutable con hash, trazos de la firma, hora y dispositivo, y el cliente recibe el PDF por WhatsApp.
-5. **Si algo falla** (internet, luz, servidor, WhatsApp, una tablet), hay un plan escrito para cada caso. El último recurso es un **talonario en papel**, que después se carga al sistema. Ver [`PLAN-B.md`](PLAN-B.md).
+5. **Si falla internet**, hay un **plan de emergencia por niveles**: el router pasa solo a 4G; si no alcanza, los **celulares de la empresa comparten datos a las tablets**; si no, se trabaja **desde el celular**; y como último recurso, **papel**, que se carga después con la hora real. Ver [`PLAN-B.md`](PLAN-B.md).
 
-La decisión de arquitectura más importante es esta: **las tablets son *offline-first***. Leen y escriben en una base local y sincronizan en segundo plano. Por eso "vuelan" y por eso un corte de internet no frena el taller.
+**Decisión de arquitectura:** todo en la nube y **tablets online**. La app de la tablet es la misma web del back-office, sin servidores en el local y sin datos guardados en las tablets. Es lo más simple de construir y mantener. A cambio, **la conexión pasa a ser crítica**, y se cubre con redundancia de red y el plan de emergencia.
 
 ---
 
@@ -29,7 +29,7 @@ La decisión de arquitectura más importante es esta: **las tablets son *offline
 |---|---|---|
 | **Cliente** | Pide la instalación por WhatsApp; firma al retirar el vehículo | Su WhatsApp / tablet de firma |
 | **Vendedor / atención** | Responde el WhatsApp, arma y confirma la orden | Back-office web (PC) |
-| **Coordinador de taller** | Asigna turnos en el calendario, reprograma y resuelve conflictos | Back-office web (PC) |
+| **Coordinador de taller** | Asigna turnos en el calendario, reprograma y es el **responsable de emergencia** del turno | Back-office web (PC) |
 | **Operario** | Recibe sus órdenes, ejecuta, marca ítems, saca fotos y cierra | Tablet de operario |
 | **Entregas** | Presenta el acta al cliente en la tablet de firma | Back-office + tablet de firma |
 | **Admin** | Usuarios, tablets, catálogo de trabajos, permisos | Back-office web |
@@ -53,6 +53,7 @@ erDiagram
     ORDEN    ||--o{ EVENTO_ORDEN : "historial"
     DISPOSITIVO ||--o{ OPERACION_SYNC : envía
     DISPOSITIVO ||--o{ ACTA_ENTREGA : "se firmó en"
+    USUARIO  ||--o{ ACCESO_EMERGENCIA : "habilitado (nivel 3)"
 ```
 
 ### Reglas clave del dominio
@@ -97,7 +98,7 @@ stateDiagram-v2
 | → `AGENDADA` | **Automático** al asignar turno | Hay un turno vigente |
 | `AGENDADA` → `CONFIRMADA` | **Automático** al quitar el último turno | Queda "para reprogramar" |
 | → `EN_CURSO` / `PAUSADA` / `TERMINADA` | Operario (tablet) | Transición válida |
-| → `ENTREGADA` | Entregas (tablet de firma) | Existe acta firmada con hash válido |
+| → `ENTREGADA` | Entregas (tablet de firma) | Existe acta firmada con hash válido: digital (con trazos de la firma) o de papel (con el escaneo) |
 | → `CANCELADA` | Vendedor / coordinador | Libera automáticamente los turnos del calendario |
 
 Cada cambio queda en `evento_orden` con **quién**, **desde qué tablet** y **cuándo**. Ese historial no se puede editar.
@@ -142,9 +143,9 @@ sequenceDiagram
 ### 4.3 Tablet del operario
 
 1. Abre la app y entra con **PIN** de 4 a 6 dígitos. Es rápido, y sólo vale en una tablet enrolada (ver [Seguridad](#7-seguridad)).
-2. Ve **"Mis órdenes de hoy"**, que ya están en la tablet desde antes: no se descarga nada en ese momento.
+2. Ve **"Mis órdenes de hoy"**: un pedido chico que carga en 1 o 2 segundos.
 3. **Iniciar** → checklist de ítems → **fotos antes/después** → **Pausar** (con motivo) o **Terminar**.
-4. Cada toque responde al instante. La sincronización pasa por detrás (ver §5).
+4. Cada acción muestra **"Guardado ✓"** o **"NO SE GUARDÓ, reintentar"**. Si no hay conexión, aparece **"SIN CONEXIÓN"** en segundos y rige el [plan de emergencia](PLAN-B.md).
 
 ### 4.4 Entrega y firma del cliente
 
@@ -160,15 +161,16 @@ sequenceDiagram
     BO->>TF: orden + fotos + texto de conformidad
     TF->>C: muestra resumen (trabajos, fotos, patente)
     C->>TF: conforme / con observaciones + nombre + DNI + firma
-    TF->>TF: genera JSON canónico, SHA-256, guarda trazos LOCAL
+    TF->>TF: genera JSON canónico + SHA-256 + trazos de la firma
+    TF->>API: envía el acta
+    API->>API: verifica hash, sella hora servidor, guarda inmutable
+    API-->>TF: confirmado
     TF-->>C: "¡Listo, gracias!" (vuelve a pantalla de espera)
-    TF->>API: sube acta (reintenta hasta lograrlo)
-    API->>API: verifica hash, sella hora servidor, genera PDF, guarda inmutable
     API->>C: PDF del acta por WhatsApp (y email)
 ```
 
 - La tablet de firma está en **modo kiosco**: el cliente no puede salir de la app ni ver otras órdenes. Si pasan 2 minutos sin actividad, vuelve a la pantalla de espera y descarta lo que no se firmó.
-- **Si no hay internet**, el back-office no puede "enviar" la orden. Por eso la tablet de firma ya tiene precargadas las órdenes `TERMINADA` del día: el empleado de entregas la elige en la tablet con su PIN y se la pasa al cliente.
+- **Si no hay conexión**, la tablet de firma tiene **prioridad en el hotspot de emergencia** (hay un cliente esperando). También puede firmarse en un **celular de la empresa**. Si nada de eso anda, se usa el **acta de papel** (`A-xxxx`), que después se carga como acta en papel con el escaneo obligatorio. La firma del cliente **nunca** se toma en un celular personal.
 - El acta guarda: **contenido exacto que vio el cliente + hash SHA-256 + trazos de la firma** (puntos con tiempo y presión, no sólo una imagen) **+ hora de la tablet + hora del servidor + tablet + empleado**. La base rechaza un acta cuyo hash no coincide con el contenido, y no permite modificarla ni borrarla.
 - Mandarle el PDF al cliente en el momento es una evidencia fuerte de que recibió y aceptó el trabajo.
 
@@ -180,74 +182,74 @@ Conviene sumar un acta firmada **al recibir** el vehículo, con fotos del estado
 
 ---
 
-## 5. Tablets que "vuelan" — diseño offline-first
+## 5. Tablets rápidas y conectadas
 
-### El principio
+### La decisión
 
-> **La tablet nunca espera a la red.** Toda pantalla lee de la base local y toda acción se guarda local primero. La red sólo se usa en segundo plano.
+Todo en la nube y **tablets online**. La app de la tablet es **la misma web del back-office**, instalada como app (PWA), con pantallas propias para el operario y para entregas. No hay servidores en el local ni datos de clientes guardados en las tablets.
 
-Las apps que "se traban" casi siempre están esperando una respuesta del servidor con una conexión Wi-Fi mala, cosa común en un taller con chapa y autos por todos lados. Si la app no depende de la red, ese problema desaparece.
-
-### Cómo sincroniza
-
-```mermaid
-flowchart LR
-    UI[Pantalla] -- lee --> LDB[(Base local<br/>SQLite cifrada)]
-    UI -- acción --> LDB
-    LDB -- encola --> OUT[Cola de salida<br/>operaciones con UUID]
-    OUT -- "segundo plano<br/>reintento con backoff" --> API[API]
-    API -- "aviso: hay cambios<br/>(WebSocket / push)" --> SYNC[Sincronizador]
-    SYNC -- "baja agenda<br/>hoy + mañana" --> LDB
-    FOT[Fotos] -- "comprimidas<br/>cola aparte" --> S3[(Storage)]
-```
-
-- **Subida (tablet → servidor)**: cada acción (iniciar, marcar ítem, pausar, terminar, firmar) es una **operación con ID propio** (UUIDv7) que va a una cola local. Se envía en segundo plano y se reintenta hasta que el servidor confirma. Si llega dos veces, el servidor la reconoce por el ID y **no la aplica dos veces** (probado en `pruebas_schema.sql`).
-- **Bajada (servidor → tablet)**: con el volumen de un taller, unas decenas de órdenes por día, la tablet baja **la agenda completa del operario para hoy y mañana** en cada sincronización. Son pocos KB y **evita toda la complejidad y los bugs de una sincronización incremental**. La sincronización se dispara por aviso del servidor (WebSocket o push), al volver a la app y cada 60 segundos como respaldo.
-- **Fotos**: se comprimen en la tablet (≈1600 px, ~300 KB) y suben por una **cola separada**. Terminar una orden no espera a que suban las fotos.
-- **Indicador siempre visible**: 🟢 sincronizado · 🟡 *N* pendientes · 🔴 sin conexión hace *X* min. El operario sabe en qué estado está, y el back-office ve el mismo semáforo por tablet (vista `vista_estado_tablets`).
-
-### Conflictos: qué pasa si dos personas cambian lo mismo
-
-| Caso | Regla |
+| A favor | En contra (y cómo se cubre) |
 |---|---|
-| Operario inicia sin internet, mientras la oficina reprograma o cancela | **Lo que pasó en el taller es un hecho**: se registra igual, la operación queda como `CONFLICTO` y aparece en una **bandeja de conflictos** del coordinador. Nunca se pierde en silencio. |
-| Dos coordinadores editan la misma orden | Concurrencia optimista: gana el primero y el segundo ve "la orden cambió, recargá" (columna `version`). |
-| Dos turnos al mismo operario u horario | Imposible: lo rechaza la base. |
-| Reloj de la tablet desfasado | Se guarda hora de tablet **y** hora del servidor; el MDM fuerza hora automática. |
+| Una sola base de código: más barato y rápido de construir | Sin conexión, la tablet no trabaja → **redundancia de red + [plan de emergencia](PLAN-B.md)** |
+| Sin sincronización ni conflictos entre tablet y servidor | Con Wi‑Fi malo, cada toque se nota → **Wi‑Fi bien hecho + servidor cerca** |
+| Actualizaciones instantáneas (se publica la web nueva y listo) | |
+| Si roban una tablet no hay datos adentro | |
+| **Funciona igual en un celular**, que es la base del plan de emergencia | |
 
-Cada dato tiene un **dueño**: la oficina es dueña de la agenda y de los datos de la orden, y el taller es dueño de la ejecución. Eso reduce los conflictos reales a casos raros que van a la bandeja.
+### Cómo se logra que "vuele" estando online
+
+- **Servidor en la región São Paulo.** Desde Argentina cada pedido tarda ~30–40 ms; a EE.UU. son 150 ms o más. Con todo online, eso se siente en cada pantalla.
+- **Pantallas livianas**: la agenda del operario es un pedido de pocos KB. Nada de bajar "todo".
+- **El toque responde al instante** (el botón cambia enseguida) y la confirmación del servidor llega en menos de medio segundo.
+- **Fotos**: se comprimen en la tablet (≈1600 px, ~300 KB) y se suben **por detrás**. El operario no espera.
+- **Falla rápido y claro**: sin conexión, en **≤ 10 s** aparece **"SIN CONEXIÓN"**. **Nunca** una ruedita infinita: eso es lo que la gente vive como "se trabó".
+- **Nunca ambiguo**: cada acción termina en **"Guardado ✓"** o **"NO SE GUARDÓ, reintentar"**.
+- **Reintentar es seguro**: cada acción lleva un ID generado en la tablet. Si llega dos veces (por ejemplo, se cortó justo después de enviarla), **no se duplica** (probado en `pruebas_schema.sql`).
+- **Aviso en tiempo real**: cuando la oficina asigna o mueve un turno, la tablet se actualiza sola (WebSocket, con recarga cada 60 s de respaldo).
+
+### La conexión es infraestructura crítica
+
+| Capa | Qué |
+|---|---|
+| Wi‑Fi del taller | Access points profesionales, **cobertura medida en cada box**, red separada para las tablets (no la de clientes) |
+| Internet | Router **dual-WAN**: fibra + 4G de **otra compañía**, con cambio automático y en **UPS** |
+| Emergencia | **2 celulares de la empresa** (compañías distintas) que comparten datos con la red `TALLER-EMERGENCIA`, **ya guardada en todas las tablets** |
+| Opcional | Tablets con **chip 4G**: dejan de depender del Wi‑Fi del local. Más caras, más abono mensual |
 
 ### Objetivos de rendimiento (criterios de aceptación)
 
 | Acción | Objetivo |
 |---|---|
-| Abrir app → ver órdenes del día | < 1 s, **sin red** |
-| Cualquier toque → respuesta visual | < 100 ms |
-| Pantallas con spinner esperando red | **Ninguna** |
+| Abrir app → ver órdenes del día | < 2 s |
+| Toque → respuesta visual | < 100 ms |
+| Acción confirmada por el servidor | < 0,5 s |
+| Sin conexión → aviso "SIN CONEXIÓN" | ≤ 10 s |
 | Sacar foto → volver a la orden | < 1 s (la subida va por detrás) |
-| Trazo de firma | Fluido, sin lag |
-| Cambio en oficina → visible en tablet (con red) | < 5 s |
+| Cambio en oficina → visible en tablet | < 5 s |
+| Corte de internet del local → taller operando de nuevo | ≤ 10 min (nivel 2 del plan) |
 
 ### Hardware y gestión de las tablets
 
 - **Tablets Android de gama media o superior** (≥ 4 GB de RAM, Android reciente y compatible con Android Enterprise). Para la de firma conviene sumar un **lápiz** pasivo, y para las de taller una **funda reforzada**.
 - **MDM (gestión de dispositivos)**, por ejemplo Intune, ManageEngine, Hexnode, Scalefusion o cualquiera basado en Android Enterprise. Con el MDM:
-  - **Modo kiosco / dispositivo dedicado**: sólo corre nuestra app y no se instalan otras cosas.
-  - Actualizaciones de la app y del sistema **fuera del horario de trabajo**, primero en **una tablet piloto**.
-  - App excluida del ahorro de batería, para que el sistema no la cierre.
+  - **Modo kiosco / dispositivo dedicado**: sólo corre nuestra app.
+  - Se carga la red **`TALLER-EMERGENCIA`** en todas las tablets.
+  - Actualizaciones del sistema operativo **fuera del horario de trabajo**, primero en **una tablet piloto**.
   - **Borrado remoto** si se pierde o la roban.
-- **Wi-Fi del taller**: access points profesionales, con la cobertura **medida en cada box** y una red separada para las tablets (no compartida con clientes).
-- **Una tablet de reserva** enrolada, cargada y lista para reemplazar a cualquiera en 5 minutos.
+- Los **celulares de emergencia** se enrolan igual que las tablets: pueden hacer todo, incluida la firma del cliente.
+- **Una tablet de reserva** enrolada y cargada. Como no guarda datos, reemplaza a cualquiera en un minuto.
 
-### ¿App nativa o PWA?
+### Concurrencia
 
-| | App Android (React Native / Flutter + SQLite) | PWA (web instalable) |
-|---|---|---|
-| Rendimiento y offline | ✅ Mejor y más predecible | ⚠️ Bueno, pero depende del navegador |
-| Cámara, kiosco, segundo plano | ✅ Completo | ⚠️ Limitado |
-| Desarrollo | Un equipo más | Mismo stack que el back-office |
+| Caso | Regla |
+|---|---|
+| Dos coordinadores editan la misma orden | Concurrencia optimista: gana el primero y el segundo ve "la orden cambió, recargá" (columna `version`) |
+| Dos turnos al mismo operario u horario | Imposible: lo rechaza la base |
+| Carga posterior desde papel | Se guarda la **hora real** del hecho y, aparte, la **hora de carga**. La base rechaza horas futuras o de más de 7 días atrás |
 
-**Recomendación: app Android nativa** (React Native o Flutter) para las tablets, porque el requisito "no se puede trabar" es el más importante. El back-office es web.
+### Mejora opcional (fase 3): tolerancia a cortes
+
+Si los cortes resultan frecuentes, la app puede **guardar la agenda del día** y **encolar acciones y firmas** mientras no hay conexión. Como el diseño ya usa **IDs generados en la tablet** y **operaciones que no se duplican**, eso es un agregado y no una reescritura.
 
 ---
 
@@ -256,11 +258,13 @@ Cada dato tiene un **dueño**: la oficina es dueña de la agenda y de los datos 
 ```mermaid
 flowchart TB
     subgraph LOCAL["Concesionaria / taller"]
-        TO["Tablets operarios<br/>(offline-first)"]
+        TO["Tablets operarios<br/>(app web)"]
         TF["Tablet firma<br/>(kiosco)"]
         PC["PCs back-office<br/>(navegador)"]
         R["Router dual-WAN<br/>fibra + 4G/5G<br/>en UPS"]
+        CEL["Celulares de emergencia<br/>hotspot TALLER-EMERGENCIA"]
         TO & TF & PC --- R
+        TO & TF -. "plan B" .- CEL
     end
     subgraph CLOUD["Nube — 2 o más zonas de disponibilidad"]
         LB["Balanceador + WAF"]
@@ -278,6 +282,7 @@ flowchart TB
     BK[("Backups en otra<br/>región / cuenta")]
     MON["Monitoreo externo<br/>+ alertas"]
     R -- HTTPS --> LB
+    CEL -. "4G (otra compañía)" .-> LB
     WA <-- "webhooks / envíos" --> LB
     WK --> WA
     DB -.-> BK
@@ -289,12 +294,12 @@ flowchart TB
 
 | Componente | Recomendación | Por qué |
 |---|---|---|
-| Base de datos | **PostgreSQL gestionado con HA** (RDS Multi-AZ, Cloud SQL HA o Azure Flexible con redundancia de zona) | Las reglas viven en la base ([`schema.sql`](schema.sql)), failover automático y backups punto-en-el-tiempo |
+| Base de datos | **PostgreSQL gestionado con HA** (RDS Multi-AZ, Cloud SQL HA o Azure Flexible con redundancia de zona), **región São Paulo** | Las reglas viven en la base ([`schema.sql`](schema.sql)), failover automático y backups punto-en-el-tiempo |
 | API | Node.js (NestJS) o Python (FastAPI), **sin estado**, en contenedores con ≥ 2 instancias | Si cae una, la otra atiende |
 | Back-office | Web (React) con un componente de calendario (ej. FullCalendar) | Arrastrar y soltar turnos |
-| Tablets | React Native o Flutter + SQLite cifrada (SQLCipher) | Offline-first real |
+| Tablets | **La misma web** instalada como app (PWA), responsive | Una sola base de código; funciona igual en un celular (plan de emergencia) |
 | Archivos | Object storage S3-compatible con **versionado y bloqueo de objetos** para actas | Las actas no se pueden borrar ni pisar |
-| Tiempo real | WebSocket/SSE + push (FCM) + polling de respaldo | Tres caminos para que el aviso llegue |
+| Tiempo real | WebSocket/SSE + recarga cada 60 s de respaldo | Dos caminos para que el aviso llegue |
 | PDF | Generado en un worker desde el mismo JSON canónico que firmó el cliente | Lo que se firmó es lo que se imprime |
 | Monitoreo | Chequeo externo de disponibilidad + logs + alertas a WhatsApp/email del responsable | Enterarse antes que el taller |
 
@@ -304,13 +309,14 @@ flowchart TB
 
 **Identidad y acceso**
 - Back-office: usuario + contraseña (argon2id) + **2FA obligatorio** para admin y coordinadores.
-- Tablets: **cada tablet se enrola** y genera un par de claves que queda registrado (`dispositivo.clave_publica`). La API **sólo acepta tablets enroladas y activas**. Por eso al operario le alcanza un PIN corto: el PIN sin la tablet no sirve, y la tablet sin el PIN tampoco.
-- **Roles**: el operario ve **sólo sus órdenes**; la tablet de firma ve **sólo la orden que se le envió** (o las terminadas del día en modo autónomo); el vendedor no puede tocar actas.
+- Tablets y celulares de la empresa: **cada equipo se enrola** y genera un par de claves que queda registrado (`dispositivo.clave_publica`). La API **sólo acepta equipos enrolados y activos**. Por eso al operario le alcanza un PIN corto: el PIN sin la tablet no sirve, y la tablet sin el PIN tampoco.
+- **Acceso de emergencia** (nivel 3 del plan) desde un celular personal: código **por persona** que habilita un coordinador o admin, que **vence en 12 h como máximo** y da **permisos mínimos** (ver la propia agenda y marcar avance, **nunca** la firma del cliente). Todo lo hecho así queda **marcado en el historial** (`acceso_emergencia`).
+- **Roles**: el operario ve **sólo sus órdenes**; la tablet de firma ve **sólo la orden que se le envió**; quien entra con acceso de emergencia ve **sólo su agenda**; el vendedor no puede tocar actas.
 - Tokens de corta duración atados al dispositivo. **Revocar una tablet** (pérdida o robo) corta su acceso al instante y el MDM la borra.
 
 **Datos**
 - TLS en todo (HSTS). Cifrado en reposo en la base, el storage y los backups.
-- Base local de la tablet **cifrada** (SQLCipher) + cifrado del dispositivo.
+- Las tablets **no guardan datos de clientes**: si se pierde una, no hay nada que robar (igual se revoca y se borra a distancia).
 - Webhooks de WhatsApp: se verifica la **firma HMAC** (`X-Hub-Signature-256`). Si no coincide, el mensaje se descarta.
 - Secretos en un gestor de secretos, nunca en el código.
 
@@ -332,35 +338,39 @@ El objetivo real no es "el servidor nunca se cae". Es que **el taller no se fren
 
 | Capa | Cómo | Si falla… |
 |---|---|---|
-| Tablets | Offline-first | Siguen trabajando horas sin servidor ni internet |
-| Internet del local | Router **dual-WAN**: fibra + 4G/5G con conmutación automática | Cambia a 4G en segundos |
-| Energía del local | **UPS** para router, ONT y access points | 30–60 min de autonomía; las tablets tienen batería |
+| Internet del local | Router **dual-WAN**: fibra + 4G/5G con conmutación automática (nivel 1) | Cambia a 4G en segundos |
+| Red de emergencia | **2 celulares de la empresa**, de compañías distintas, con hotspot ya configurado en las tablets (nivel 2) | Taller operando de nuevo en ≤ 10 min |
+| Energía del local | **UPS** para router, ONT y access points | 30–60 min de autonomía; después, nivel 2 (los celulares tienen batería) |
 | API | ≥ 2 instancias en zonas distintas detrás de un balanceador | La otra instancia atiende |
 | Base de datos | Primario + réplica en otra zona con failover automático | Failover en minutos |
 | Datos | Backups continuos (PITR) + copia inmutable en otra región | Se restaura con pérdida de pocos minutos |
-| Región entera | Restaurar en otra región desde backup (procedimiento escrito y probado) | Horas, cubiertas por el modo offline y el plan papel |
+| Región entera | Restaurar en otra región desde backup (procedimiento escrito y probado) | Horas, cubiertas por el plan papel (nivel 4) |
 
-**Objetivos propuestos**: disponibilidad del back-office ≥ 99,9 % (≈ 45 min de caída al mes como máximo), **RPO ≤ 5 min** (cuántos datos se pueden perder) y **RTO ≤ 1 h** ante falla de zona (cuánto se tarda en volver). Para el taller, el objetivo es **0 minutos de parada** gracias al modo offline.
+**Objetivos propuestos**: disponibilidad del back-office ≥ 99,9 % (≈ 45 min de caída al mes como máximo), **RPO ≤ 5 min** (cuántos datos se pueden perder) y **RTO ≤ 1 h** ante falla de zona (cuánto se tarda en volver). Para el taller: ante un corte de internet del local, **volver a operar en ≤ 10 minutos** (nivel 2); si el sistema está caído, **pasar a papel sin esperar** (nivel 4).
 
 ---
 
-## 9. Plan B — resumen
+## 9. Plan de emergencia — resumen
 
-El detalle paso a paso está en [`PLAN-B.md`](PLAN-B.md). Resumen:
+El detalle paso a paso, los roles, el kit y la vuelta a la normalidad están en [`PLAN-B.md`](PLAN-B.md).
 
-| Escenario | Respuesta automática | Acción manual |
+| Nivel | Cuándo | Qué se hace |
 |---|---|---|
-| **Se corta internet** | Router pasa a 4G; tablets siguen offline | Si cae también el 4G: hotspot de un celular de la empresa |
-| **Se corta la luz** | UPS mantiene la red; tablets con batería | Corte largo: modo offline + plan papel |
-| **Se cae el sistema (nube)** | Failover; tablets siguen offline | Usar la **agenda impresa del día** (llega por email cada mañana) |
-| **Se cae WhatsApp / bloquean el número** | Avisos por email/SMS | Atender por teléfono y cargar la orden con origen `TELEFONO` |
-| **Se rompe o pierden una tablet** | — | Tablet de reserva + revocar la otra desde el back-office |
-| **Bug en una versión nueva** | Despliegue escalonado | Volver a la versión anterior desde el MDM |
-| **Todo falla** | — | **Talonario de papel numerado** (`C-0001`…) que después se carga con origen `CONTINGENCIA_PAPEL` y foto escaneada |
+| **1 · Automático** | Se corta la fibra | El router pasa solo a 4G |
+| **2 · Celular → tablets** | El local se quedó sin internet | Los celulares de la empresa comparten datos (`TALLER-EMERGENCIA`) |
+| **3 · Desde el celular** | Las tablets no se pueden usar | Celulares de la empresa para todo; personales con código temporal, sólo para marcar avance |
+| **4 · Papel** | El sistema está caído, no hay señal, o lo anterior no anduvo en 20 min | Agenda impresa + planilla de avance + talonarios `C-` y `A-` |
+
+**Clave:** el hotspot sólo sirve si el problema es **la red del local**. Si **el sistema** está caído, se pasa directo a papel. Por eso el primer paso es siempre el diagnóstico: probar desde un celular **con datos móviles**.
+
+**Al volver**, el papel se carga **en el día**. La base lo soporta:
+- Guarda la **hora real** del hecho y, aparte, la **hora de carga**.
+- Exige el **escaneo** del acta de papel.
+- No deja cargar dos veces el mismo número de talonario.
 
 Dos cosas baratas que valen oro:
-1. **Agenda impresa automática**: cada mañana a las 7:00 el sistema manda por email el PDF con la agenda del día y del siguiente. Si todo se cae, el taller sabe igual qué hacer.
-2. **Simulacro trimestral**: desconectar internet a propósito 30 minutos un día de poco trabajo y verificar que el plan funciona.
+1. **Agenda impresa automática**: cada mañana a las 7:00 el sistema manda por email el PDF con la agenda del día. Se imprime al abrir.
+2. **Simulacros**: apagar el router a propósito un día de poco trabajo y medir cuánto se tarda en volver a operar.
 
 ---
 
@@ -368,10 +378,10 @@ Dos cosas baratas que valen oro:
 
 | Fase | Entrega | Criterio de "listo" |
 |---|---|---|
-| **0. Preparación** | Relevamiento (preguntas §11), compra de tablets + MDM + router dual-WAN + UPS, alta de WhatsApp Business API y plantillas, talonarios de contingencia impresos | Hardware enrolado; plantillas aprobadas |
-| **1. MVP** | Back-office (clientes, vehículos, órdenes, calendario), app de operario offline, tablet de firma con acta PDF | Una semana real en el taller sin papel y sin quejas de "se traba" |
+| **0. Preparación** | Relevamiento (preguntas §11), compra de tablets + MDM + router dual-WAN + UPS, **2 celulares de emergencia** con la red `TALLER-EMERGENCIA`, medición del Wi‑Fi en cada box, alta de WhatsApp Business API y plantillas, talonarios y planillas de emergencia impresos | Hardware enrolado; plantillas aprobadas; **primer simulacro de nivel 2 en ≤ 10 min** |
+| **1. MVP** | Back-office (clientes, vehículos, órdenes, calendario, **carga desde papel, acceso de emergencia**), app web de operario y de firma (**también usable en celular**), acta PDF, email de agenda diaria | Una semana real en el taller sin papel y sin quejas de "se traba" |
 | **2. WhatsApp integrado** | Bandeja de chats, crear orden desde el chat, avisos automáticos (confirmación, recordatorio, listo, acta) | Las órdenes nacen en el chat |
-| **3. Operación madura** | Tablero de tablets, bandeja de conflictos, reportes (tiempos, productividad), bot de WhatsApp, acta de recepción | Métricas visibles para la gerencia |
+| **3. Operación madura** | Tablero de tablets, reportes (tiempos, productividad), bot de WhatsApp, acta de recepción y, si los cortes son frecuentes, **tolerancia a cortes** en la app (§5) | Métricas visibles para la gerencia |
 
 **Recomendación:** antes de construir, hacer un **prototipo de la app de tablet** y probarlo una semana con 1–2 operarios reales. Es la parte con más riesgo de rechazo.
 

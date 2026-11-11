@@ -265,5 +265,117 @@ SELECT pg_temp.verificar('la vista de agenda muestra el turno con patente y oper
 SELECT pg_temp.verificar('una tablet que nunca sincronizó aparece en ROJO',
     (SELECT semaforo FROM vista_estado_tablets WHERE nombre = 'Tablet Box 1') = 'ROJO');
 
+-- ---------------------------------------------------------------------
+-- Plan de emergencia: carga diferida desde papel
+-- (las horas son relativas a now() para que las pruebas no dependan de la fecha)
+-- ---------------------------------------------------------------------
+SET LOCAL app.usuario_id     = 'a0000000-0000-0000-0000-000000000001';   -- coordinadora carga el papel
+SET LOCAL app.dispositivo_id = '';
+
+INSERT INTO orden (id, cliente_id, vehiculo_id, origen, creada_por) VALUES
+    ('10000000-0000-0000-0000-000000000003', 'e0000000-0000-0000-0000-000000000001',
+     'f0000000-0000-0000-0000-000000000002', 'MOSTRADOR', 'a0000000-0000-0000-0000-000000000002');
+INSERT INTO orden_item (orden_id, descripcion) VALUES ('10000000-0000-0000-0000-000000000003', 'Polarizado');
+UPDATE orden SET estado = 'CONFIRMADA' WHERE id = '10000000-0000-0000-0000-000000000003';
+INSERT INTO turno (orden_id, operario_id, rango, asignado_por)
+SELECT '10000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000004',
+       tstzrange(date_trunc('hour', now()) - interval '1 day', date_trunc('hour', now()) - interval '21 hours'),
+       'a0000000-0000-0000-0000-000000000001';
+
+-- Hubo un corte: Ana trabajó la orden con la planilla de papel. Al volver, se carga con la hora real.
+SELECT set_config('app.hora_real', (now() + interval '1 day')::text, true);
+SELECT pg_temp.debe_fallar('cargar con hora real en el futuro',
+    $$UPDATE orden SET estado = 'EN_CURSO' WHERE id = '10000000-0000-0000-0000-000000000003'$$, '23514');
+SELECT set_config('app.hora_real', (now() - interval '30 days')::text, true);
+SELECT pg_temp.debe_fallar('cargar con hora real de hace un mes (error de tipeo)',
+    $$UPDATE orden SET estado = 'EN_CURSO' WHERE id = '10000000-0000-0000-0000-000000000003'$$, '23514');
+
+SELECT set_config('app.hora_real', (now() - interval '1 day')::text, true);
+UPDATE orden SET estado = 'EN_CURSO'  WHERE id = '10000000-0000-0000-0000-000000000003';
+SELECT set_config('app.hora_real', (now() - interval '22 hours')::text, true);
+UPDATE orden SET estado = 'TERMINADA' WHERE id = '10000000-0000-0000-0000-000000000003';
+
+-- Se entregó con el acta de papel A-0001
+INSERT INTO adjunto (id, orden_id, tipo, storage_key, sha256, mime, capturado_en) VALUES
+    ('40000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000003', 'PAPEL_ESCANEADO',
+     'ordenes/1002/acta-papel-A-0001.jpg', repeat('c', 64), 'image/jpeg', now());
+
+SELECT pg_temp.debe_fallar('acta en papel sin el escaneo',
+    $$INSERT INTO acta_entrega (id, orden_id, medio, numero_papel, contenido_canonico, contenido_sha256,
+          firmante_nombre, firmante_doc, conformidad, entregado_por, firmado_en)
+      VALUES ('50000000-0000-0000-0000-000000000008', '10000000-0000-0000-0000-000000000003', 'PAPEL', 'A-0001',
+              '{}', encode(sha256(convert_to('{}', 'UTF8')), 'hex'), 'María Pérez', '30123456', 'CONFORME',
+              'a0000000-0000-0000-0000-000000000005', now() - interval '21 hours')$$, '23514');
+SELECT pg_temp.debe_fallar('acta digital sin los trazos de la firma',
+    $$INSERT INTO acta_entrega (id, orden_id, contenido_canonico, contenido_sha256,
+          firmante_nombre, firmante_doc, conformidad, entregado_por, dispositivo_id, firmado_en)
+      VALUES ('50000000-0000-0000-0000-000000000008', '10000000-0000-0000-0000-000000000003',
+              '{}', encode(sha256(convert_to('{}', 'UTF8')), 'hex'), 'María Pérez', '30123456', 'CONFORME',
+              'a0000000-0000-0000-0000-000000000005', 'd0000000-0000-0000-0000-000000000002', now())$$, '23514');
+
+INSERT INTO acta_entrega (id, orden_id, medio, numero_papel, papel_escaneado_id, contenido_canonico,
+                          contenido_sha256, firmante_nombre, firmante_doc, conformidad, entregado_por, firmado_en)
+VALUES ('50000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000003', 'PAPEL', 'A-0001',
+        '40000000-0000-0000-0000-000000000003', '{"acta":"A-0001","vin":"8AJBA3FS0N0123456"}',
+        encode(sha256(convert_to('{"acta":"A-0001","vin":"8AJBA3FS0N0123456"}', 'UTF8')), 'hex'),
+        'María Pérez', '30123456', 'CONFORME', 'a0000000-0000-0000-0000-000000000005',
+        now() - interval '21 hours');
+SELECT set_config('app.hora_real', (now() - interval '21 hours')::text, true);
+UPDATE orden SET estado = 'ENTREGADA' WHERE id = '10000000-0000-0000-0000-000000000003';
+SELECT set_config('app.hora_real', '', true);
+
+SELECT pg_temp.verificar('una orden entregada en papel queda ENTREGADA con su acta escaneada',
+    (SELECT estado FROM orden WHERE id = '10000000-0000-0000-0000-000000000003') = 'ENTREGADA');
+SELECT pg_temp.verificar('la carga diferida guarda la hora real y, aparte, la hora de carga',
+    (SELECT bool_and(registrado_en - ocurrido_en > interval '20 hours') FROM evento_orden
+      WHERE orden_id = '10000000-0000-0000-0000-000000000003'
+        AND estado_nuevo IN ('EN_CURSO', 'TERMINADA', 'ENTREGADA')));
+
+INSERT INTO orden (origen, numero_papel, creada_por) VALUES
+    ('CONTINGENCIA_PAPEL', 'C-0001', 'a0000000-0000-0000-0000-000000000001');
+SELECT pg_temp.debe_fallar('cargar dos veces la misma orden de talonario',
+    $$INSERT INTO orden (origen, numero_papel, creada_por) VALUES
+      ('CONTINGENCIA_PAPEL', 'C-0001', 'a0000000-0000-0000-0000-000000000001')$$, '23505');
+
+-- ---------------------------------------------------------------------
+-- Plan de emergencia: acceso desde celular personal (nivel 3)
+-- ---------------------------------------------------------------------
+SELECT pg_temp.debe_fallar('un operario no puede habilitar accesos de emergencia',
+    $$INSERT INTO acceso_emergencia (usuario_id, habilitado_por, codigo_hash, motivo, vence_en)
+      VALUES ('a0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000003',
+              'x', 'corte', now() + interval '8 hours')$$, '23514');
+SELECT pg_temp.debe_fallar('acceso de emergencia de más de 12 horas',
+    $$INSERT INTO acceso_emergencia (usuario_id, habilitado_por, codigo_hash, motivo, vence_en)
+      VALUES ('a0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000001',
+              'x', 'corte', now() + interval '2 days')$$, '23514');
+SELECT pg_temp.debe_fallar('habilitarse un acceso de emergencia a uno mismo',
+    $$INSERT INTO acceso_emergencia (usuario_id, habilitado_por, codigo_hash, motivo, vence_en)
+      VALUES ('a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001',
+              'x', 'corte', now() + interval '8 hours')$$, '23514');
+
+INSERT INTO acceso_emergencia (id, usuario_id, habilitado_por, codigo_hash, motivo, vence_en) VALUES
+    ('60000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000003',
+     'a0000000-0000-0000-0000-000000000001', 'hash-del-codigo', 'Nivel 3: tablet sin batería', now() + interval '8 hours');
+
+INSERT INTO orden (id, cliente_id, vehiculo_id, origen, creada_por) VALUES
+    ('10000000-0000-0000-0000-000000000004', 'e0000000-0000-0000-0000-000000000001',
+     'f0000000-0000-0000-0000-000000000001', 'TELEFONO', 'a0000000-0000-0000-0000-000000000002');
+INSERT INTO orden_item (orden_id, descripcion) VALUES ('10000000-0000-0000-0000-000000000004', 'Cámara de retroceso');
+UPDATE orden SET estado = 'CONFIRMADA' WHERE id = '10000000-0000-0000-0000-000000000004';
+INSERT INTO turno (orden_id, operario_id, rango, asignado_por) VALUES
+    ('10000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000003',
+     '[2030-01-07 09:00-03, 2030-01-07 10:00-03)', 'a0000000-0000-0000-0000-000000000001');
+
+SET LOCAL app.usuario_id           = 'a0000000-0000-0000-0000-000000000003';   -- Juan, desde su celular
+SET LOCAL app.acceso_emergencia_id = '60000000-0000-0000-0000-000000000001';
+UPDATE orden SET estado = 'EN_CURSO' WHERE id = '10000000-0000-0000-0000-000000000004';
+SET LOCAL app.acceso_emergencia_id = '';
+
+SELECT pg_temp.verificar('el historial marca lo hecho con acceso de emergencia (sin equipo enrolado)',
+    EXISTS (SELECT 1 FROM evento_orden
+             WHERE orden_id = '10000000-0000-0000-0000-000000000004' AND estado_nuevo = 'EN_CURSO'
+               AND acceso_emergencia_id = '60000000-0000-0000-0000-000000000001'
+               AND dispositivo_id IS NULL));
+
 \echo '>>> Todas las pruebas pasaron'
 ROLLBACK;

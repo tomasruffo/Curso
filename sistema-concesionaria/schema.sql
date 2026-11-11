@@ -15,10 +15,15 @@
 --   6. Cada cambio de estado queda en un historial que no se puede editar ni borrar.
 --   7. Una operación enviada por una tablet se aplica UNA sola vez (idempotencia),
 --      aunque la tablet la reintente 20 veces por mala conexión.
+--   8. Plan de emergencia: lo que se carga después desde papel guarda la hora REAL
+--      y la hora de carga; el acta en papel exige el escaneo; el acceso desde un
+--      celular personal es temporal, lo habilita un coordinador y queda marcado.
 --
 --  Contexto de auditoría: dentro de cada transacción la API ejecuta
---      SET LOCAL app.usuario_id     = '<uuid>';
---      SET LOCAL app.dispositivo_id = '<uuid>';   -- si viene de una tablet
+--      SET LOCAL app.usuario_id           = '<uuid>';
+--      SET LOCAL app.dispositivo_id       = '<uuid>';   -- tablet o celular de la empresa
+--      SET LOCAL app.acceso_emergencia_id = '<uuid>';   -- nivel 3: celular personal
+--      SET LOCAL app.hora_real            = '<fecha>';  -- carga diferida desde papel
 --  y los triggers lo registran en el historial.
 -- =====================================================================
 
@@ -32,6 +37,26 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;   -- para EXCLUDE (operario =, rango 
 CREATE FUNCTION ctx_uuid(clave text) RETURNS uuid
 LANGUAGE sql STABLE AS $$
     SELECT NULLIF(current_setting(clave, true), '')::uuid
+$$;
+
+-- Hora en que ocurrió un hecho. Normalmente "ahora"; en una carga diferida desde papel,
+-- la hora real anotada. Rechaza horas futuras y cargas de más de 7 días (casi seguro un error de tipeo).
+CREATE FUNCTION hora_del_evento() RETURNS timestamptz
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    h timestamptz := NULLIF(current_setting('app.hora_real', true), '')::timestamptz;
+BEGIN
+    IF h IS NULL THEN
+        RETURN now();
+    END IF;
+    IF h > now() + interval '5 minutes' THEN
+        RAISE EXCEPTION 'La hora real (%) no puede estar en el futuro', h USING ERRCODE = 'check_violation';
+    END IF;
+    IF h < now() - interval '7 days' THEN
+        RAISE EXCEPTION 'La hora real (%) tiene más de 7 días: revisar la fecha', h USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN h;
+END
 $$;
 
 -- "ab 123 cd" / "AB-123-CD" -> "AB123CD"
@@ -57,7 +82,8 @@ CREATE TYPE estado_orden     AS ENUM ('BORRADOR', 'CONFIRMADA', 'AGENDADA', 'EN_
                                       'PAUSADA', 'TERMINADA', 'ENTREGADA', 'CANCELADA');
 CREATE TYPE origen_orden     AS ENUM ('WHATSAPP', 'MOSTRADOR', 'TELEFONO', 'CONTINGENCIA_PAPEL');
 CREATE TYPE estado_turno     AS ENUM ('VIGENTE', 'CANCELADO');
-CREATE TYPE tipo_dispositivo AS ENUM ('TABLET_OPERARIO', 'TABLET_FIRMA');
+CREATE TYPE tipo_dispositivo AS ENUM ('TABLET_OPERARIO', 'TABLET_FIRMA', 'CELULAR_EMPRESA');
+CREATE TYPE medio_firma      AS ENUM ('DIGITAL', 'PAPEL');
 CREATE TYPE tipo_adjunto     AS ENUM ('FOTO_ANTES', 'FOTO_DESPUES', 'FOTO_OTRA',
                                       'FIRMA_TRAZOS', 'ACTA_PDF', 'PAPEL_ESCANEADO');
 CREATE TYPE resultado_op     AS ENUM ('APLICADA', 'CONFLICTO', 'RECHAZADA');
@@ -79,7 +105,8 @@ CREATE TABLE usuario (
 );
 CREATE UNIQUE INDEX usuario_email_uq ON usuario (lower(email));
 
--- Tablets enroladas. Una tablet que no está acá (o está revocada) no puede hablar con la API.
+-- Tablets y celulares de la empresa enrolados. Un equipo que no está acá (o está revocado)
+-- no puede hablar con la API, salvo con un acceso de emergencia (ver abajo).
 CREATE TABLE dispositivo (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     nombre          text NOT NULL UNIQUE,          -- "Tablet Box 2", "Tablet Firma Entregas"
@@ -93,6 +120,39 @@ CREATE TABLE dispositivo (
     bateria_pct     smallint CHECK (bateria_pct BETWEEN 0 AND 100),
     enrolada_en     timestamptz NOT NULL DEFAULT now()
 );
+
+-- Plan de emergencia, nivel 3: entrar desde un celular personal (no enrolado).
+-- Lo habilita un coordinador o admin, por persona, con un código de un solo uso que vence en <= 12 h.
+-- Permisos mínimos (los aplica la API): ver la propia agenda y marcar avance. Nunca firma del cliente.
+CREATE TABLE acceso_emergencia (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    usuario_id      uuid NOT NULL REFERENCES usuario (id),
+    habilitado_por  uuid NOT NULL REFERENCES usuario (id),
+    codigo_hash     text NOT NULL,
+    motivo          text NOT NULL,
+    creado_en       timestamptz NOT NULL DEFAULT now(),
+    vence_en        timestamptz NOT NULL,
+    usado_en        timestamptz,
+    revocado_en     timestamptz,                   -- "revocar todos" al volver a la normalidad
+    CONSTRAINT acceso_emergencia_vigencia
+        CHECK (vence_en > creado_en AND vence_en <= creado_en + interval '12 hours'),
+    CONSTRAINT acceso_emergencia_no_propio CHECK (usuario_id <> habilitado_por)
+);
+CREATE INDEX acceso_emergencia_abiertos_idx ON acceso_emergencia (usuario_id) WHERE revocado_en IS NULL;
+
+CREATE FUNCTION acceso_emergencia_validar() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM usuario
+                    WHERE id = NEW.habilitado_por AND rol IN ('ADMIN', 'COORDINADOR') AND activo) THEN
+        RAISE EXCEPTION 'Sólo un coordinador o admin puede habilitar un acceso de emergencia'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END
+$$;
+CREATE TRIGGER acceso_emergencia_validar BEFORE INSERT ON acceso_emergencia
+    FOR EACH ROW EXECUTE FUNCTION acceso_emergencia_validar();
 
 CREATE TABLE puesto (              -- box / elevador / lugar físico de instalación
     id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -262,22 +322,31 @@ CREATE TABLE adjunto (
 CREATE INDEX adjunto_orden_idx ON adjunto (orden_id);
 
 CREATE TABLE acta_entrega (
-    id                  uuid PRIMARY KEY,          -- lo genera la tablet de firma
+    id                  uuid PRIMARY KEY,          -- lo genera la tablet de firma (o el back-office si es papel)
     orden_id            uuid NOT NULL UNIQUE REFERENCES orden (id),
+    medio               medio_firma NOT NULL DEFAULT 'DIGITAL',
     -- JSON canónico EXACTO que se le mostró al cliente y que la tablet hasheó:
     -- cliente, vehículo, trabajos, fotos (por hash), texto de conformidad, versión del texto legal.
+    -- En papel: los datos transcriptos del acta (los hashea el servidor).
     contenido_canonico  text NOT NULL,
     contenido_sha256    text NOT NULL,
     firmante_nombre     text NOT NULL,
     firmante_doc        text NOT NULL,
     conformidad         text NOT NULL CHECK (conformidad IN ('CONFORME', 'CON_OBSERVACIONES')),
     observaciones       text,
-    firma_trazos_id     uuid NOT NULL REFERENCES adjunto (id),  -- trazos x,y,t,presión (no sólo una imagen)
-    pdf_id              uuid REFERENCES adjunto (id),           -- lo genera el servidor después
+    firma_trazos_id     uuid REFERENCES adjunto (id),  -- DIGITAL: trazos x,y,t,presión (no sólo una imagen)
+    papel_escaneado_id  uuid REFERENCES adjunto (id),  -- PAPEL: foto/escaneo del acta firmada (obligatorio)
+    numero_papel        text UNIQUE,                   -- PAPEL: número de talonario, ej. "A-0007"
+    pdf_id              uuid REFERENCES adjunto (id),  -- lo genera el servidor después
     entregado_por       uuid NOT NULL REFERENCES usuario (id),
-    dispositivo_id      uuid NOT NULL REFERENCES dispositivo (id),
-    firmado_en          timestamptz NOT NULL,      -- reloj de la tablet
+    dispositivo_id      uuid REFERENCES dispositivo (id),  -- DIGITAL: tablet o celular de la empresa
+    firmado_en          timestamptz NOT NULL,      -- reloj de la tablet, o la hora anotada en el papel
     recibido_en         timestamptz NOT NULL DEFAULT now(),  -- reloj del servidor
+    CONSTRAINT acta_evidencia CHECK (
+        (medio = 'DIGITAL' AND firma_trazos_id IS NOT NULL AND dispositivo_id IS NOT NULL
+                           AND papel_escaneado_id IS NULL AND numero_papel IS NULL)
+     OR (medio = 'PAPEL'   AND papel_escaneado_id IS NOT NULL AND numero_papel IS NOT NULL
+                           AND firma_trazos_id IS NULL)),
     CONSTRAINT acta_contenido_es_json CHECK (contenido_canonico::jsonb IS NOT NULL),
     CONSTRAINT acta_hash_valido CHECK (
         contenido_sha256 = encode(sha256(convert_to(contenido_canonico, 'UTF8')), 'hex')),
@@ -311,8 +380,10 @@ CREATE TABLE evento_orden (
     estado_nuevo     estado_orden,
     usuario_id       uuid,
     dispositivo_id   uuid,
+    acceso_emergencia_id uuid REFERENCES acceso_emergencia (id),  -- hecho desde un celular personal
     datos            jsonb,
-    ocurrido_en      timestamptz NOT NULL DEFAULT now()
+    ocurrido_en      timestamptz NOT NULL DEFAULT now(),  -- cuándo pasó (hora real si se cargó desde papel)
+    registrado_en    timestamptz NOT NULL DEFAULT now()   -- cuándo se cargó en el sistema
 );
 CREATE INDEX evento_orden_orden_idx ON evento_orden (orden_id, id);
 CREATE TRIGGER evento_orden_append_only BEFORE UPDATE OR DELETE ON evento_orden
@@ -379,14 +450,18 @@ CREATE FUNCTION orden_registrar_evento() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     IF TG_OP = 'INSERT' THEN
-        INSERT INTO evento_orden (orden_id, tipo, estado_nuevo, usuario_id, dispositivo_id, datos)
+        INSERT INTO evento_orden (orden_id, tipo, estado_nuevo, usuario_id, dispositivo_id,
+                                  acceso_emergencia_id, datos, ocurrido_en)
         VALUES (NEW.id, 'CREADA', NEW.estado,
                 COALESCE(ctx_uuid('app.usuario_id'), NEW.creada_por), ctx_uuid('app.dispositivo_id'),
-                jsonb_build_object('origen', NEW.origen));
+                ctx_uuid('app.acceso_emergencia_id'),
+                jsonb_build_object('origen', NEW.origen), hora_del_evento());
     ELSIF NEW.estado IS DISTINCT FROM OLD.estado THEN
-        INSERT INTO evento_orden (orden_id, tipo, estado_anterior, estado_nuevo, usuario_id, dispositivo_id)
+        INSERT INTO evento_orden (orden_id, tipo, estado_anterior, estado_nuevo, usuario_id, dispositivo_id,
+                                  acceso_emergencia_id, ocurrido_en)
         VALUES (NEW.id, 'CAMBIO_ESTADO', OLD.estado, NEW.estado,
-                ctx_uuid('app.usuario_id'), ctx_uuid('app.dispositivo_id'));
+                ctx_uuid('app.usuario_id'), ctx_uuid('app.dispositivo_id'),
+                ctx_uuid('app.acceso_emergencia_id'), hora_del_evento());
 
         IF NEW.estado = 'CANCELADA' THEN      -- liberar el calendario
             UPDATE turno SET estado = 'CANCELADO' WHERE orden_id = NEW.id AND estado = 'VIGENTE';
