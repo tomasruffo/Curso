@@ -34,7 +34,7 @@ Inventario de los flujos que **ya tenemos** y de los que **proponemos**, pensado
 flowchart TD
     A["Contacto<br/>WhatsApp · teléfono<br/>turno online"] --> B["Turno<br/>agenda por capacidad<br/>y técnico habilitado"]
     B --> C["Recepción guiada<br/>campañas pendientes<br/>fotos · km · firma"]
-    C --> D["Diagnóstico<br/>técnico + fotos"]
+    C --> D["Tareas según el motivo<br/>service · pedido del cliente<br/>diagnóstico de una falla"]
     D --> E{"¿Quién paga?"}
     E -- cliente --> F["Presupuesto<br/>aprobación por link"]
     E -- "marca: garantía<br/>o campaña" --> G["Cobertura validada<br/>pieza retenida"]
@@ -114,18 +114,56 @@ También están diseñados la recepción de mercadería con el remito leído por
 
 **Por qué:** es donde se protege al taller (daños previos), donde se detectan las campañas (trabajo que paga la marca) y donde se ofrecen los pendientes.
 
-#### P2. Diagnóstico → presupuesto → aprobación
-**Quién:** técnico, asesor y cliente.
-1. La orden de una reparación empieza con una **tarea de diagnóstico**.
-2. El técnico diagnostica desde la tablet: **fotos o video**, código de falla y repuestos necesarios.
-3. El asesor arma el **presupuesto**:
-   - repuestos de la lista de la marca y mano de obra según el baremo;
-   - cada ítem marcado como **necesario, recomendado u opcional**.
-4. El cliente lo recibe por **link de WhatsApp** y **aprueba o rechaza cada ítem**. Queda la constancia.
-5. Lo aprobado se convierte en tareas, y los repuestos se **reservan o se piden**.
-6. Lo rechazado queda en la historia clínica como **pendiente**, para ofrecerlo en la próxima visita.
+#### P2. Del motivo de ingreso a las tareas
+**Quién:** asesor, técnico y cliente.
 
-**Ya existe en el modelo:** las tareas con origen, la aprobación del cliente y los hallazgos. **Falta:** la tarea de diagnóstico, el presupuesto con vencimiento y el link.
+No toda visita empieza con un diagnóstico. En la recepción, el asesor anota **por qué viene el auto**, y cada motivo arma sus tareas de una forma distinta. **Una misma visita puede combinar varios motivos**: por ejemplo, el service de los 20.000 km, un ruido al frenar y una campaña que el sistema detectó al ingresar.
+
+| Motivo de ingreso | Ejemplo | Cómo se arman las tareas | ¿Diagnóstico? | Precio |
+|---|---|---|---|---|
+| **Service programado** | "El service de los 20.000 km" | El sistema propone el **kit del service** de esa marca, modelo y kilometraje: tareas, repuestos y tiempo | No | **Cerrado**, conocido antes de empezar |
+| **Pedido concreto del cliente** | "Cambiar las pastillas", "poner una alarma" | El asesor agrega lo pedido (o su kit) | No, pero el técnico **confirma** al empezar | Presupuesto antes de empezar |
+| **Falla o síntoma** | "Hace ruido al frenar" | Empieza con una **tarea de diagnóstico** | Sí | Se presupuesta después del diagnóstico |
+| **Garantía o campaña** | Falla cubierta; recall de la marca | Diagnóstico para validar la cobertura, o el procedimiento que fija la marca para la campaña | Según el caso | Lo paga la marca (P3, P4) |
+
+```mermaid
+flowchart TD
+    R["Recepción<br/>¿por qué viene el auto?"] --> S["Service programado<br/>kit del service · precio cerrado"]
+    R --> P["Pedido del cliente<br/>tareas pedidas · presupuesto"]
+    R --> F["Falla o síntoma<br/>tarea de diagnóstico"]
+    R --> G["Garantía o campaña<br/>validar cobertura"]
+    S --> I["Inspección del service<br/>semáforo verde · amarillo · rojo"]
+    F --> DX["Diagnóstico con fotos<br/>→ presupuesto"]
+    I --> H["Hallazgos<br/>(amarillo y rojo)"]
+    P --> T["Ejecución<br/>el técnico confirma lo pedido"]
+    T -- "no era eso<br/>o hay algo más" --> H
+    H --> A["Adicionales<br/>el cliente aprueba ítem por ítem"]
+    DX --> A
+    G --> E["Tareas que paga la marca"]
+    A --> X["Ejecución de lo aprobado"]
+    A -- rechazado --> Q["Queda pendiente<br/>en la historia del auto"]
+```
+
+**Tres reglas valen para todos los caminos:**
+1. **Cada service incluye una inspección.** Es un checklist de puntos (frenos, neumáticos, batería, luces, fluidos, etc.) que el técnico marca en **verde, amarillo o rojo**, con foto. Lo amarillo y lo rojo se convierte en recomendaciones. **Ahí nace la mayor parte del trabajo adicional:** según J.D. Power, el cliente aprueba lo recomendado el 51% de las veces cuando ve foto o video, y el 24% cuando no la ve (ver [`IDEAS-MERCADO.md`](IDEAS-MERCADO.md)).
+2. **Un pedido concreto se confirma al empezar.** Si el cliente pidió pastillas y el técnico ve que también están gastados los discos, o que el ruido viene de otro lado, lo carga como **hallazgo**. Si lo pedido no hacía falta, la tarea se **cancela con ese motivo**. Decirle al cliente "no hacía falta" genera confianza.
+3. **Lo adicional siempre pasa por el cliente**:
+   - cada ítem se marca como **necesario, recomendado u opcional**;
+   - el cliente aprueba o rechaza **ítem por ítem** desde un **link de WhatsApp**, con foto;
+   - lo aprobado se ejecuta y sus repuestos se reservan o se piden;
+   - lo rechazado queda **pendiente en la historia clínica** para la próxima visita.
+
+**Ya existe en el modelo:**
+- tareas con origen (hallazgo o pedido del cliente);
+- aprobación del cliente obligatoria para lo adicional con costo;
+- cancelación con motivo;
+- hallazgos con severidad (**INFO, ATENCION, URGENTE**, que coinciden con el semáforo verde, amarillo, rojo).
+
+**Falta:**
+- el **motivo de ingreso** y el **tipo de cada tarea**;
+- los **kits de service por marca, modelo y km**, con precio cerrado;
+- el **checklist de inspección**;
+- el **presupuesto con vencimiento** y el link.
 
 #### P3. Garantía de fábrica
 **Quién:** asesor, técnico y responsable de garantías.
@@ -216,7 +254,8 @@ sequenceDiagram
 ## 5. Lo que estos flujos le piden al modelo
 
 Hay que sumar, con sus reglas y pruebas, como hicimos con lo demás:
-- **Tipo de trabajo y pagador por tarea:** service, reparación, diagnóstico, garantía, campaña, accesorio, preparación del 0 km; paga el cliente, la marca, la concesionaria o es interno. Es la base de P3, P4, P6 y P7.
+- **Motivo de ingreso de la visita** y **tipo y pagador de cada tarea**: service, mantenimiento pedido, diagnóstico, reparación, garantía, campaña, accesorio, preparación del 0 km; paga el cliente, la marca, la concesionaria o es interno. Es la base de P2, P3, P4, P6 y P7.
+- **Kits de service** por marca, modelo y km, con precio cerrado, y **checklist de inspección** con semáforo (P2).
 - **Reclamo de garantía** con sus estados, plazos y pieza retenida (P3).
 - **Campañas:** VIN afectados por marca, con responsable y avance (P4).
 - **Pedido de repuestos** desde la tarea y estado **"esperando repuesto"** en la orden (P5).
@@ -230,7 +269,7 @@ Hay que sumar, con sus reglas y pruebas, como hicimos con lo demás:
 
 1. **Etapa 1:**
    - P1 recepción guiada;
-   - P2 diagnóstico y presupuesto;
+   - P2 del motivo de ingreso a las tareas (service, pedido, diagnóstico);
    - P3 garantía de fábrica;
    - P5 repuestos desde el box;
    - P6 cobro y retiro con cuenta corriente;
@@ -245,7 +284,8 @@ Hay que sumar, con sus reglas y pruebas, como hicimos con lo demás:
 
 1. ¿Qué marcas atienden, y cómo presenta cada una las garantías (portal propio, sistema obligatorio, email)?
 2. ¿Hay alguien dedicado a garantías y alguien a cargo del pañol de repuestos?
-3. ¿Trabajan para concesionarias? ¿Con cuenta corriente?
-4. ¿Cómo llegan hoy las campañas de las marcas?
-5. ¿Atienden eléctricos o híbridos?
-6. ¿Prestan auto de cortesía? Si es así, sería otro flujo (reserva, entrega y devolución con fotos).
+3. ¿El **diagnóstico se cobra**? ¿Se descuenta si después el cliente aprueba la reparación?
+4. ¿Trabajan para concesionarias? ¿Con cuenta corriente?
+5. ¿Cómo llegan hoy las campañas de las marcas?
+6. ¿Atienden eléctricos o híbridos?
+7. ¿Prestan auto de cortesía? Si es así, sería otro flujo (reserva, entrega y devolución con fotos).
