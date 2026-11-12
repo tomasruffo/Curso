@@ -11,6 +11,25 @@ Síntesis de tres investigaciones independientes, cada una con su propio enfoque
 
 ---
 
+## Corrección de contexto: el negocio es un **taller**, no una concesionaria
+
+Las investigaciones se hicieron pensando en el taller de una concesionaria. La mayoría de las ideas vale igual para un taller. Estas cambian:
+
+| # | Idea | Para un taller |
+|---|---|---|
+| 1 | Accesorios prometidos en la venta | **Sólo si el taller trabaja para concesionarias.** En ese caso pasa a ser "órdenes de concesionarias clientes": la concesionaria manda el 0 km con lo que prometió y la fecha de entrega. Si no trabaja para concesionarias, se descarta |
+| 2 | Quién paga cada línea | **Sigue.** Cambian los pagadores: cliente particular, empresa o flota (cuenta corriente), concesionaria cliente, garantía del proveedor |
+| 10 | Encuesta y reseña en Google | **Sube de importancia:** para un taller, la reputación en Google suele ser el principal canal de clientes nuevos (es criterio propio, sin fuente) |
+| 11 | Pasaporte digital del accesorio | **Sigue.** El argumento pasa a ser la **garantía del taller**, no "instalado por la red oficial" |
+| 17 | Canales externos (GM + Mercado Libre) | **Baja:** ese programa es para la red oficial de Chevrolet. Sólo queda prever un origen "canal externo" en la orden |
+| 18 | Cobro por link o QR | **Sube a etapa 2:** en un taller el cliente paga directamente, no junto con la factura del auto |
+| 19 | Turnos online | **Sube a etapa 2:** en un taller el cliente reserva directamente. Se había bajado porque en una concesionaria el trabajo entra por Ventas |
+| 20 | Configurador para vendedores | Pasa a ser un **catálogo de trabajos reales** para el mostrador y WhatsApp (complejidad media) |
+
+Sin cambios: kits por modelo (3), recepción y control de calidad con fotos (4), costo de reposición (5), factura (6; la Factura de Crédito MiPyME aplica si hay flotas o concesionarias como clientes), fotos y video al cliente (7), tiempos (8), margen (9), garantías y retrabajos (12), auditoría de fugas (13), stock (14), dos monedas (15) y semáforo de recomendaciones (16).
+
+---
+
 ## Resumen priorizado
 
 | # | Idea | Encontrada en | ¿Ya está en el diseño? | Etapa sugerida | Complejidad |
