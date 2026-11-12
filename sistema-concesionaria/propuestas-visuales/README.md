@@ -19,6 +19,25 @@ Cada archivo es **autocontenido**: se puede abrir solo, sin instalar nada. Sólo
 | 11 | [Historia del auto](11-historia-vehiculo.html) | La historia clínica: visitas, km, hallazgos, lo instalado con serie y garantía, pendientes |
 | 12 | [Listas de precios](12-listas-precios.html) | **Interactiva**: el responsable de la marca confirma las variaciones grandes y recién ahí puede aprobar |
 
+## Variantes de diseño
+
+En [`variantes/`](variantes/index.html) están las dos pantallas principales (**Tablero** y **Tablet del operario**) en **diez estilos distintos**, con los mismos datos, ya adaptados al taller con posventa oficial. Sirven para elegir la dirección visual antes de implementar.
+
+| # | Variante | En pocas palabras |
+|---|---|---|
+| 01 | [Grafito](variantes/01-grafito.html) | La línea actual, pulida: negro, vidrio y luz celeste |
+| 02 | [Porcelana](variantes/02-porcelana.html) | Claro y sereno, estilo Apple |
+| 03 | [Cockpit](variantes/03-cockpit.html) | Tablero de instrumentos: indicadores circulares y ámbar |
+| 04 | [Editorial](variantes/04-editorial.html) | Revista de autos: serifa grande, papel crema, menú arriba |
+| 05 | [Boxes](variantes/05-boxes.html) | Competición: negro, rojo, cursivas y diagonales |
+| 06 | [Plano](variantes/06-plano.html) | Plano técnico: azul de ingeniería, grilla y medidas del auto |
+| 07 | [Bento](variantes/07-bento.html) | Bloques de colores y barra de íconos, muy fácil de leer |
+| 08 | [Taller](variantes/08-taller.html) | Industrial y de alto contraste, pensada para el box |
+| 09 | [Champagne](variantes/09-champagne.html) | Lujo silencioso: negro cálido y dorado |
+| 10 | [Aurora](variantes/10-aurora.html) | Futuro eléctrico: violeta y turquesa |
+
+En todas, la tablet es interactiva (tildar tareas, sacar fotos, registrar un hallazgo y terminar). En el celular, las pantallas se achican enteras para que se vea el diseño real.
+
 ## Lenguaje visual
 
 - **Fondo casi negro con una sola luz de acento** (celeste), como un auto en un estudio de fotos. Verde, amarillo y rojo sólo para estados.

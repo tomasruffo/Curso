@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Variantes de diseño</title>
+<meta name="description" content="Diez direcciones de diseño para el Tablero y la Tablet del operario.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0b0b0d;color:#f5f5f7;font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1320px;margin:0 auto;padding:56px 28px 80px}
+.eb{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#5ac8fa}
+h1{font-size:52px;letter-spacing:-.035em;line-height:1.02;margin:12px 0 14px;font-weight:650}
+.lead{max-width:720px;color:rgba(245,245,247,.7);font-size:16.5px;line-height:1.55}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;margin-top:40px}
+.vc{display:flex;flex-direction:column;gap:12px;padding:14px 14px 18px;border-radius:22px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);transition:transform .2s,border-color .2s}
+.vc:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.22)}
+.mini{aspect-ratio:16/10;border-radius:12px;background:var(--pb);display:grid;grid-template-columns:14% 1fr 1fr 1fr;grid-template-rows:20% 46% 1fr;gap:6px;padding:8px;overflow:hidden}
+.mini i{display:block;border-radius:var(--pr);background:var(--pc)}
+.ms{grid-row:1/4;opacity:.7}
+.mh{grid-column:2/4;grid-row:2;position:relative;background:var(--pc)}
+.mh b{position:absolute;left:10%;top:22%;width:42%;height:12%;border-radius:3px;background:var(--pt)}
+.mh s{position:absolute;right:8%;bottom:20%;width:44%;height:34%;border:2px solid var(--pa);border-radius:40% 50% 10% 10%/60% 70% 10% 10%}
+.mk{grid-row:1}
+.mk:nth-of-type(3){background:var(--pa)}
+.mg{grid-column:4;grid-row:2/4}
+.vt{display:flex;align-items:baseline;gap:10px;padding:0 4px}
+.vt span{font-size:12px;color:rgba(245,245,247,.45);font-variant-numeric:tabular-nums}
+.vt h2{font-size:20px;letter-spacing:-.02em;font-weight:650}
+.vc p{font-size:13.5px;line-height:1.5;color:rgba(245,245,247,.65);padding:0 4px;flex:1}
+.vs{display:flex;gap:6px;padding:0 4px}.vs i{width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.15)}
+.foot{margin-top:48px;font-size:13.5px;color:rgba(245,245,247,.5);line-height:1.6;max-width:760px}
+@media(max-width:640px){.wrap{padding:32px 16px 56px}h1{font-size:38px}}
+</style></head><body><div class="wrap">
+<div class="eb">Propuestas visuales · variantes</div>
+<h1>Diez direcciones de diseño</h1>
+<p class="lead">Las dos pantallas principales, el <b>Tablero</b> de la oficina y la <b>Tablet del operario</b>, con los mismos datos en diez estilos distintos. Cada una es interactiva: en la tablet se pueden tildar tareas, sacar las fotos y recién ahí terminar.</p>
+<div class="grid"><a class="vc" href="01-grafito.html" style="--pb:#07080a;--pc:rgba(255,255,255,.08);--pa:#5ac8fa;--pt:#f5f5f7;--pr:8px">
+<div class="mini"><i class="ms"></i><i class="mh"><b></b><s></s></i><i class="mk"></i><i class="mk"></i><i class="mk"></i><i class="mg"></i></div>
+<div class="vt"><span>01</span><h2>Grafito</h2></div><p>La línea de la primera propuesta, pulida. Negro profundo, superficies de vidrio y una sola luz celeste. El auto dibujado con trazo luminoso.</p>
+<div class="vs"><i style="background:#07080a"></i><i style="background:#1c1d21"></i><i style="background:#5ac8fa"></i><i style="background:#f5f5f7"></i></div></a><a class="vc" href="02-porcelana.html" style="--pb:#ececf0;--pc:#ffffff;--pa:#0071e3;--pt:#1d1d1f;--pr:8px">
+<div class="mini"><i class="ms"></i><i class="mh"><b></b><s></s></i><i class="mk"></i><i class="mk"></i><i class="mk"></i><i class="mg"></i></div>
+<div class="vt"><span>02</span><h2>Porcelana</h2></div><p>Claro, limpio y silencioso, como la web de Apple. Sombras suaves, mucho blanco y el auto en negro como una foto de catálogo.</p>
+<div class="vs"><i style="background:#f5f5f7"></i><i style="background:#ffffff"></i><i style="background:#0071e3"></i><i style="background:#1d1d1f"></i></div></a><a class="vc" href="03-cockpit.html" style="--pb:#0b0b0c;--pc:#1b1b1e;--pa:#ff9f0a;--pt:#f2f2f2;--pr:5px">
+<div class="mini"><i class="ms"></i><i class="mh"><b></b><s></s></i><i class="mk"></i><i class="mk"></i><i class="mk"></i><i class="mg"></i></div>
+<div class="vt"><span>03</span><h2>Cockpit</h2></div><p>El tablero de instrumentos de un auto: indicadores circulares, números monoespaciados y luz ámbar sobre negro.</p>
+<div class="vs"><i style="background:#0b0b0c"></i><i style="background:#19191c"></i><i style="background:#ff9f0a"></i><i style="background:#32d74b"></i></div></a><a class="vc" href="04-editorial.html" style="--pb:#f6f1e7;--pc:rgba(22,22,22,.09);--pa:#b4441c;--pt:#161616;--pr:0">
+<div class="mini"><i class="ms"></i><i class="mh"><b></b><s></s></i><i class="mk"></i><i class="mk"></i><i class="mk"></i><i class="mg"></i></div>
+<div class="vt"><span>04</span><h2>Editorial</h2></div><p>Como una revista de autos: serifa grande, papel crema, filetes negros y nada de cajas. El menú pasa arriba, como el encabezado de una revista.</p>
+<div class="vs"><i style="background:#f6f1e7"></i><i style="background:#161616"></i><i style="background:#b4441c"></i><i style="background:#7d776c"></i></div></a><a class="vc" href="05-boxes.html" style="--pb:#0c0c0d;--pc:#1f1f22;--pa:#e10600;--pt:#ffffff;--pr:2px">
+<div class="mini"><i class="ms"></i><i class="mh"><b></b><s></s></i><i class="mk"></i><i class="mk"></i><i class="mk"></i><i class="mg"></i></div>
+<div class="vt"><span>05</span><h2>Boxes</h2></div><p>Telemetría de competición: negro, rojo y blanco, cursivas y formas en diagonal. La agenda del día se lee como una tabla de tiempos.</p>
+<div class="vs"><i style="background:#0c0c0d"></i><i style="background:#e10600"></i><i style="background:#ffffff"></i><i style="background:#00d26a"></i></div></a><a class="vc" href="06-plano.html" style="--pb:#0e2c52;--pc:rgba(234,243,255,.13);--pa:#ffd166;--pt:#eaf3ff;--pr:0">
+<div class="mini"><i class="ms"></i><i class="mh"><b></b><s></s></i><i class="mk"></i><i class="mk"></i><i class="mk"></i><i class="mg"></i></div>
+<div class="vt"><span>06</span><h2>Plano</h2></div><p>Plano técnico: azul de ingeniería, grilla milimetrada, letra monoespaciada y el auto con sus medidas, como en un manual de servicio oficial.</p>
+<div class="vs"><i style="background:#0e2c52"></i><i style="background:#eaf3ff"></i><i style="background:#ffd166"></i><i style="background:#7fe3b4"></i></div></a><a class="vc" href="07-bento.html" style="--pb:#f3f1ec;--pc:#dcd8ff;--pa:#5b4cf5;--pt:#141418;--pr:12px">
+<div class="mini"><i class="ms"></i><i class="mh"><b></b><s></s></i><i class="mk"></i><i class="mk"></i><i class="mk"></i><i class="mg"></i></div>
+<div class="vt"><span>07</span><h2>Bento</h2></div><p>Bloques de colores con bordes muy redondeados, números enormes y una barra de íconos en lugar del menú. Moderno, amable y fácil de leer de un vistazo.</p>
+<div class="vs"><i style="background:#dcd8ff"></i><i style="background:#c8f0d8"></i><i style="background:#ffe2c9"></i><i style="background:#5b4cf5"></i><i style="background:#141418"></i></div></a><a class="vc" href="08-taller.html" style="--pb:#efece6;--pc:#ffffff;--pa:#ffd400;--pt:#151515;--pr:3px">
+<div class="mini"><i class="ms"></i><i class="mh"><b></b><s></s></i><i class="mk"></i><i class="mk"></i><i class="mk"></i><i class="mg"></i></div>
+<div class="vt"><span>08</span><h2>Taller</h2></div><p>Industrial y de alto contraste: amarillo y negro, bordes gruesos y botones enormes. Se lee bajo el sol y se toca con guantes.</p>
+<div class="vs"><i style="background:#ffd400"></i><i style="background:#151515"></i><i style="background:#efece6"></i><i style="background:#0a8a3a"></i></div></a><a class="vc" href="09-champagne.html" style="--pb:#0f0d0b;--pc:rgba(212,184,130,.13);--pa:#d4b882;--pt:#f3ece0;--pr:2px">
+<div class="mini"><i class="ms"></i><i class="mh"><b></b><s></s></i><i class="mk"></i><i class="mk"></i><i class="mk"></i><i class="mg"></i></div>
+<div class="vt"><span>09</span><h2>Champagne</h2></div><p>Lujo silencioso: negro cálido, dorado suave, serifa fina y mucho aire. Como la recepción de posventa de una marca premium.</p>
+<div class="vs"><i style="background:#0f0d0b"></i><i style="background:#d4b882"></i><i style="background:#f3ece0"></i><i style="background:#a8874f"></i></div></a><a class="vc" href="10-aurora.html" style="--pb:#08071a;--pc:rgba(139,123,255,.24);--pa:#2de2c8;--pt:#f4f2ff;--pr:10px">
+<div class="mini"><i class="ms"></i><i class="mh"><b></b><s></s></i><i class="mk"></i><i class="mk"></i><i class="mk"></i><i class="mg"></i></div>
+<div class="vt"><span>10</span><h2>Aurora</h2></div><p>El futuro eléctrico: luces de aurora violeta y turquesa, vidrio y una tipografía ancha. En sintonía con la imagen de las marcas chinas de autos eléctricos.</p>
+<div class="vs"><i style="background:#08071a"></i><i style="background:#8b7bff"></i><i style="background:#2de2c8"></i><i style="background:#ff5c8a"></i></div></a></div>
+<p class="foot">Los datos son de ejemplo: un taller con posventa oficial de marcas chinas. "Órbita" sigue siendo un nombre provisorio. Las pantallas originales están en <a href="../index.html" style="text-decoration:underline">las 12 propuestas visuales</a>.</p>
+</div></body></html>
