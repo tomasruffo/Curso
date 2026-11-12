@@ -6,7 +6,9 @@
 | **Órdenes** | Carga manual (mostrador, teléfono, WhatsApp del celular) | **WhatsApp Business conectado**: la orden nace en el chat |
 | **Avisos al cliente** | Los manda una persona | **Automáticos** (turno, recordatorio, listo, acta, factura) |
 | **Facturación** | **Manual asistida**: el sistema arma todo, una persona emite en ARCA y carga el CAE | **Automática** con ARCA |
-| **Stock** | Sólo catálogo de productos (se registra qué se usó en cada orden) | **Gestión inteligente**: reservas, alertas y compras sugeridas |
+| **Stock** | Catálogo de productos. **Propuesta:** sumar el stock básico (inventario inicial, ingresos con remito, consumos por tarea, ajustes aprobados), ver [PROCESO.md](PROCESO.md) | **Gestión inteligente**: reservas, alertas y compras sugeridas |
+| **Listas de precios por marca** | Se sube el Excel, la base compara con la anterior y **aprueba el responsable de la marca** | Llegan solas por email; un agente ayuda a leer formatos nuevos. **Aprueba siempre el responsable** |
+| **Historia clínica del auto** | Visitas, km, hallazgos, tareas, componentes con serie y garantía, cambios de dueño | Avisos de garantías por vencer y recomendaciones pendientes |
 | **Seguridad** | **Completa desde el día 1** ([SEGURIDAD.md](SEGURIDAD.md)) | Se suma lo de las integraciones (WhatsApp, certificado de ARCA) |
 | **Agentes de IA** | — (se junta el historial que van a necesitar) | Proponen compras, ingresos de mercadería, borradores de orden y reprogramaciones; **aprueba una persona** ([AGENTES.md](AGENTES.md)) |
 

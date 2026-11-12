@@ -5,14 +5,15 @@ Documento de diseño **v0.2**: lógica de negocio, arquitectura, seguridad, alta
 | Archivo | Qué es |
 |---|---|
 | `README.md` | Este documento: cómo funciona el sistema y por qué está diseñado así |
-| [`propuestas-visuales/`](propuestas-visuales/) | **10 pantallas de diseño** (HTML): ingreso, tablero, agenda, orden, tablets, WhatsApp, stock, facturación y centro de control. Abrir `index.html` |
+| [`propuestas-visuales/`](propuestas-visuales/) | **12 pantallas de diseño** (HTML): ingreso, tablero, agenda, orden, tablets, WhatsApp, stock, facturación, centro de control, historia del auto y listas de precios. Abrir `index.html` |
+| [`PROCESO.md`](PROCESO.md) | **Historia clínica del auto**, unidad de trabajo (orden y tareas), cambios en la marcha, carga de stock y **listas de precios por marca** |
 | [`ETAPAS.md`](ETAPAS.md) | **Etapa 1** (digitalización, carga manual, facturación manual asistida) y **etapa 2** (WhatsApp, facturación automática, stock inteligente) |
 | [`SEGURIDAD.md`](SEGURIDAD.md) | Ingreso ultra seguro (passkeys por rol), datos sensibles cifrados, quién ve qué, recuperación de cuentas |
 | [`AGENTES.md`](AGENTES.md) | Agentes de IA (stock, mercadería, WhatsApp, agenda): proponen, una persona aprueba |
 | [`INFRA-GCP.md`](INFRA-GCP.md) | Cómo se arma en Google Cloud y la configuración segura (proyectos, políticas, red, claves, auditoría) |
 | [`PLAN-B.md`](PLAN-B.md) | Plan de emergencia por niveles (hotspot, celular, papel), para imprimir y tener en el taller |
 | [`schema.sql`](schema.sql) | Modelo de datos en PostgreSQL con las reglas de negocio aplicadas en la base |
-| [`pruebas_schema.sql`](pruebas_schema.sql) | 83 pruebas que verifican esas reglas (`psql -f schema.sql -f pruebas_schema.sql`) |
+| [`pruebas_schema.sql`](pruebas_schema.sql) | 123 pruebas que verifican esas reglas (`psql -f schema.sql -f pruebas_schema.sql`) |
 
 ---
 
@@ -70,6 +71,12 @@ erDiagram
     COMPROBANTE |o--o{ COMPROBANTE : "nota de crédito de"
     USUARIO  ||--o{ SESION : "ingresa con"
     USUARIO  ||--o{ CREDENCIAL_PASSKEY : registra
+    VEHICULO ||--o{ HALLAZGO : "historia clínica"
+    VEHICULO ||--o{ COMPONENTE_INSTALADO : "tiene instalado"
+    VEHICULO ||--o{ VEHICULO_TITULAR : "dueños"
+    MARCA    ||--o{ LISTA_PRECIO : "manda"
+    LISTA_PRECIO ||--|{ LISTA_PRECIO_ITEM : contiene
+    PRODUCTO ||--o{ MOVIMIENTO_STOCK : "libro de stock"
 ```
 
 ### Reglas clave del dominio
@@ -80,6 +87,7 @@ erDiagram
 - **Patente ya asociada a otro cliente**: el sistema avisa ("¿cambio de titular?") y no bloquea.
 - **Orden mínima para confirmar**: cliente + vehículo + al menos un ítem. Un *borrador* puede existir incompleto, porque nace de un chat donde los datos llegan de a poco.
 - **Las órdenes no se borran, se cancelan.** Los turnos tampoco se borran. El acta y el historial son inmutables.
+- **Cada auto tiene su historia clínica** (visitas, km, hallazgos, tareas, componentes con serie y garantía, entregas, cambios de dueño). La **orden** es la visita y la **tarea** es la unidad de ejecución. Una orden en curso puede cambiar, pero cada cambio dice de dónde sale y por qué, y lo que tiene costo necesita la aprobación del cliente. Ver [`PROCESO.md`](PROCESO.md).
 
 Todo esto lo hace cumplir la base de datos ([`schema.sql`](schema.sql)), no sólo la aplicación. Un bug en el código no puede dejar datos inconsistentes.
 

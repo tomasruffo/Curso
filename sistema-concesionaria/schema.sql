@@ -29,6 +29,16 @@
 --  11. Agentes de IA (AGENTES.md): los agentes sólo PROPONEN. Una propuesta nace pendiente,
 --      la revisa una persona con el rol que corresponde a ese tipo, vence si nadie la revisa,
 --      y lo propuesto no se puede editar después.
+--  12. Historia clínica del vehículo (PROCESO.md): la historia es del auto, no del dueño.
+--      Hallazgos y componentes instalados (con serie y garantía) no se borran; los cambios
+--      de titular quedan registrados.
+--  13. Unidad de trabajo: la ORDEN es la visita; la TAREA es lo que se ejecuta. Con la orden
+--      confirmada, una tarea nueva dice de dónde sale (hallazgo o pedido del cliente) y por qué,
+--      un trabajo adicional con costo no se hace sin la aprobación del cliente, lo pactado no
+--      se edita (se cancela con motivo y se agrega otra) y no se termina con tareas pendientes.
+--  14. Stock: libro de movimientos que no se borra; un ajuste lo aprueba otra persona.
+--      Listas de precios por marca: sólo el responsable de la marca las aprueba, cada variación
+--      grande se confirma una por una y la base calcula la variación (no el importador).
 --
 --  Contexto de auditoría: dentro de cada transacción la API ejecuta
 --      SET LOCAL app.usuario_id           = '<uuid>';
@@ -440,6 +450,33 @@ $$;
 CREATE TRIGGER vehiculo_normalizar BEFORE INSERT OR UPDATE ON vehiculo
     FOR EACH ROW EXECUTE FUNCTION vehiculo_normalizar();
 
+-- Historia de titulares: el auto conserva su historia cuando cambia de dueño.
+CREATE TABLE vehiculo_titular (
+    id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    vehiculo_id  uuid NOT NULL REFERENCES vehiculo (id),
+    cliente_id   uuid NOT NULL REFERENCES cliente (id),
+    desde        timestamptz NOT NULL DEFAULT now(),
+    hasta        timestamptz,
+    CONSTRAINT titular_periodo CHECK (hasta IS NULL OR hasta >= desde)
+);
+CREATE UNIQUE INDEX vehiculo_titular_actual_uq ON vehiculo_titular (vehiculo_id) WHERE hasta IS NULL;
+
+CREATE FUNCTION vehiculo_registrar_titular() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW.cliente_id IS NOT DISTINCT FROM OLD.cliente_id THEN
+        RETURN NULL;
+    END IF;
+    UPDATE vehiculo_titular SET hasta = now() WHERE vehiculo_id = NEW.id AND hasta IS NULL;
+    IF NEW.cliente_id IS NOT NULL THEN
+        INSERT INTO vehiculo_titular (vehiculo_id, cliente_id) VALUES (NEW.id, NEW.cliente_id);
+    END IF;
+    RETURN NULL;
+END
+$$;
+CREATE TRIGGER vehiculo_registrar_titular AFTER INSERT OR UPDATE OF cliente_id ON vehiculo
+    FOR EACH ROW EXECUTE FUNCTION vehiculo_registrar_titular();
+
 -- ---------------------------------------------------------------------
 -- Órdenes
 -- ---------------------------------------------------------------------
@@ -453,16 +490,179 @@ CREATE TABLE catalogo_trabajo (    -- mano de obra: qué se hace y cuánto tarda
     activo                boolean NOT NULL DEFAULT true
 );
 
--- Artículos que se instalan (alarma, cámara, film...). En la etapa 1 sólo catálogo y precio;
--- registrar QUÉ artículo usó cada orden desde el día 1 es lo que después permite el stock inteligente.
+-- Cada marca manda su lista de precios (Excel). Siempre hay UNA persona responsable de verificarla.
+CREATE TABLE marca (
+    id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    nombre                  text NOT NULL UNIQUE,
+    responsable_precios_id  uuid NOT NULL REFERENCES usuario (id),
+    umbral_variacion_pct    numeric(5, 2) NOT NULL DEFAULT 30 CHECK (umbral_variacion_pct > 0)  -- más que esto: se confirma uno por uno
+);
+
+-- Artículos que se instalan (alarma, cámara, film...). Registrar QUÉ artículo usó cada tarea
+-- desde el día 1 es lo que después permite el stock inteligente y la historia del auto.
+-- precio_lista: para artículos SIN lista de marca. Los de marca toman el precio de su lista vigente.
 CREATE TABLE producto (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     sku           text NOT NULL UNIQUE,
     descripcion   text NOT NULL,
     precio_lista  numeric(14, 2) NOT NULL CHECK (precio_lista >= 0),       -- sin IVA
     alicuota_iva  numeric(4, 2) NOT NULL DEFAULT 21 CHECK (alicuota_iva IN (0, 2.5, 5, 10.5, 21, 27)),
-    activo        boolean NOT NULL DEFAULT true
+    marca_id      uuid REFERENCES marca (id),
+    codigo_marca  text,                                                    -- el código que usa la marca en su Excel
+    activo        boolean NOT NULL DEFAULT true,
+    CONSTRAINT producto_codigo_marca CHECK ((marca_id IS NULL) = (codigo_marca IS NULL)),
+    CONSTRAINT producto_codigo_marca_uq UNIQUE (marca_id, codigo_marca)
 );
+
+CREATE TYPE estado_lista AS ENUM ('BORRADOR', 'APROBADA', 'RECHAZADA');
+
+-- Una lista de precios tal como la mandó la marca. La carga puede ser automática;
+-- la aprobación es SIEMPRE de una persona: el responsable de precios de esa marca.
+CREATE TABLE lista_precio (
+    id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    marca_id         uuid NOT NULL REFERENCES marca (id),
+    vigente_desde    date NOT NULL,
+    archivo_nombre   text NOT NULL,                -- el Excel original, guardado tal cual llegó
+    archivo_sha256   text NOT NULL CHECK (archivo_sha256 ~ '^[0-9a-f]{64}$'),
+    moneda           text NOT NULL DEFAULT 'ARS' CHECK (moneda IN ('ARS', 'USD')),
+    precios_con_iva  boolean NOT NULL,
+    origen_carga     text NOT NULL CHECK (origen_carga IN ('MANUAL', 'AUTOMATICA')),
+    cargada_por      uuid REFERENCES usuario (id), -- NULL si la cargó el importador automático
+    cargada_en       timestamptz NOT NULL DEFAULT now(),
+    estado           estado_lista NOT NULL DEFAULT 'BORRADOR',
+    revisada_por     uuid REFERENCES usuario (id),
+    revisada_en      timestamptz,
+    observaciones    text,
+    CONSTRAINT lista_carga CHECK ((origen_carga = 'MANUAL') = (cargada_por IS NOT NULL)),
+    CONSTRAINT lista_revision CHECK ((estado = 'BORRADOR') = (revisada_por IS NULL)
+                                     AND (estado = 'BORRADOR') = (revisada_en IS NULL)),
+    CONSTRAINT lista_rechazo_con_motivo CHECK (estado <> 'RECHAZADA' OR observaciones IS NOT NULL)
+);
+CREATE UNIQUE INDEX lista_precio_vigencia_uq ON lista_precio (marca_id, vigente_desde) WHERE estado = 'APROBADA';
+
+CREATE TABLE lista_precio_item (
+    id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    lista_id              uuid NOT NULL REFERENCES lista_precio (id),
+    codigo_marca          text NOT NULL,
+    descripcion           text NOT NULL,
+    precio                numeric(14, 2) NOT NULL CHECK (precio > 0),
+    alicuota_iva          numeric(4, 2) NOT NULL DEFAULT 21 CHECK (alicuota_iva IN (0, 2.5, 5, 10.5, 21, 27)),
+    producto_id           uuid REFERENCES producto (id),   -- NULL = código nuevo: se crea al aprobar
+    precio_anterior       numeric(14, 2),                  -- lo calcula la base desde la lista anterior
+    variacion_pct         numeric(9, 2) GENERATED ALWAYS AS (
+                              CASE WHEN precio_anterior > 0
+                                   THEN round((precio - precio_anterior) / precio_anterior * 100, 2) END) STORED,
+    variacion_confirmada  boolean NOT NULL DEFAULT false,  -- el responsable miró esta variación grande
+    CONSTRAINT lista_item_codigo_uq UNIQUE (lista_id, codigo_marca)
+);
+
+CREATE FUNCTION lista_item_preparar() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_marca     uuid;
+    v_estado    estado_lista;
+    v_desde     date;
+    v_anterior  numeric;
+    v_producto  uuid;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        SELECT estado INTO v_estado FROM lista_precio WHERE id = OLD.lista_id;
+        IF v_estado <> 'BORRADOR' THEN
+            RAISE EXCEPTION 'Una lista revisada no se modifica' USING ERRCODE = 'restrict_violation';
+        END IF;
+        RETURN OLD;
+    END IF;
+    SELECT marca_id, estado, vigente_desde INTO v_marca, v_estado, v_desde FROM lista_precio WHERE id = NEW.lista_id;
+    IF v_estado <> 'BORRADOR' THEN
+        RAISE EXCEPTION 'Una lista revisada no se modifica: si hay un error, se carga una lista nueva'
+            USING ERRCODE = 'restrict_violation';
+    END IF;
+    NEW.codigo_marca := upper(trim(NEW.codigo_marca));
+    -- El precio anterior lo calcula la base: el importador no puede maquillar la variación.
+    SELECT i.precio INTO v_anterior
+      FROM lista_precio_item i JOIN lista_precio l ON l.id = i.lista_id
+     WHERE l.marca_id = v_marca AND l.estado = 'APROBADA' AND l.vigente_desde < v_desde
+       AND i.codigo_marca = NEW.codigo_marca
+     ORDER BY l.vigente_desde DESC LIMIT 1;
+    NEW.precio_anterior := v_anterior;
+    SELECT id INTO v_producto FROM producto WHERE marca_id = v_marca AND codigo_marca = NEW.codigo_marca;
+    NEW.producto_id := v_producto;
+    RETURN NEW;
+END
+$$;
+CREATE TRIGGER lista_item_preparar BEFORE INSERT OR UPDATE OR DELETE ON lista_precio_item
+    FOR EACH ROW EXECUTE FUNCTION lista_item_preparar();
+
+CREATE FUNCTION lista_precio_revisar() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    m       marca%ROWTYPE;
+    v_n     integer;
+    v_pend  integer;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        IF OLD.estado <> 'BORRADOR' THEN
+            RAISE EXCEPTION 'Una lista revisada no se borra' USING ERRCODE = 'restrict_violation';
+        END IF;
+        RETURN OLD;
+    END IF;
+    IF OLD.estado <> 'BORRADOR' THEN
+        RAISE EXCEPTION 'Una lista revisada no se modifica: si hay un error, se carga una lista nueva'
+            USING ERRCODE = 'restrict_violation';
+    END IF;
+    IF NEW.estado = 'BORRADOR' THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT * INTO m FROM marca WHERE id = NEW.marca_id;
+    IF NEW.revisada_por IS DISTINCT FROM m.responsable_precios_id
+       OR NOT EXISTS (SELECT 1 FROM usuario WHERE id = NEW.revisada_por AND activo) THEN
+        RAISE EXCEPTION 'Sólo el responsable de precios de % puede aprobar o rechazar su lista', m.nombre
+            USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    NEW.revisada_en := now();
+
+    IF NEW.estado = 'APROBADA' THEN
+        SELECT count(*), count(*) FILTER (WHERE abs(variacion_pct) > m.umbral_variacion_pct AND NOT variacion_confirmada)
+          INTO v_n, v_pend
+          FROM lista_precio_item WHERE lista_id = NEW.id;
+        IF v_n = 0 THEN
+            RAISE EXCEPTION 'La lista no tiene precios' USING ERRCODE = 'check_violation';
+        END IF;
+        IF v_pend > 0 THEN
+            RAISE EXCEPTION '% precio(s) cambian más de % %% y el responsable no los confirmó uno por uno',
+                v_pend, m.umbral_variacion_pct USING ERRCODE = 'check_violation';
+        END IF;
+        -- Códigos nuevos de la marca: se dan de alta en el catálogo al aprobar.
+        INSERT INTO producto (sku, descripcion, precio_lista, alicuota_iva, marca_id, codigo_marca)
+        SELECT upper(left(m.nombre, 3)) || '-' || i.codigo_marca, i.descripcion,
+               CASE WHEN NEW.precios_con_iva THEN round(i.precio / (1 + i.alicuota_iva / 100), 2) ELSE i.precio END,
+               i.alicuota_iva, m.id, i.codigo_marca
+          FROM lista_precio_item i
+         WHERE i.lista_id = NEW.id AND i.producto_id IS NULL;
+        UPDATE lista_precio_item SET producto_id = NULL WHERE lista_id = NEW.id AND producto_id IS NULL;  -- re-vincula
+    END IF;
+    RETURN NEW;
+END
+$$;
+CREATE TRIGGER lista_precio_revisar BEFORE UPDATE OR DELETE ON lista_precio
+    FOR EACH ROW EXECUTE FUNCTION lista_precio_revisar();
+
+-- Cambiar al responsable de precios de una marca queda en el registro de seguridad.
+CREATE FUNCTION marca_cambio_responsable() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.responsable_precios_id IS DISTINCT FROM OLD.responsable_precios_id THEN
+        INSERT INTO evento_seguridad (tipo, usuario_id, detalle)
+        VALUES ('RESPONSABLE_PRECIOS_CAMBIADO', ctx_uuid('app.usuario_id'),
+                jsonb_build_object('marca', NEW.nombre, 'anterior', OLD.responsable_precios_id,
+                                   'nuevo', NEW.responsable_precios_id));
+    END IF;
+    RETURN NULL;
+END
+$$;
+CREATE TRIGGER marca_cambio_responsable AFTER UPDATE ON marca
+    FOR EACH ROW EXECUTE FUNCTION marca_cambio_responsable();
 
 CREATE SEQUENCE orden_numero_seq START 1000;
 
@@ -472,6 +672,7 @@ CREATE TABLE orden (
     estado          estado_orden NOT NULL DEFAULT 'BORRADOR',
     cliente_id      uuid REFERENCES cliente (id),
     vehiculo_id     uuid REFERENCES vehiculo (id),
+    km_ingreso      integer CHECK (km_ingreso BETWEEN 0 AND 2000000),  -- se anota en la recepción
     origen          origen_orden NOT NULL,
     numero_papel    text UNIQUE,                   -- talonario de contingencia, ej. "C-0042"
     whatsapp_chat   text,                          -- conversación que originó la orden
@@ -489,6 +690,11 @@ CREATE INDEX orden_cliente_idx  ON orden (cliente_id);
 CREATE INDEX orden_vehiculo_idx ON orden (vehiculo_id);
 CREATE INDEX orden_abiertas_idx ON orden (estado) WHERE estado NOT IN ('ENTREGADA', 'CANCELADA');
 
+CREATE TYPE estado_tarea AS ENUM ('PENDIENTE', 'HECHO', 'CANCELADO');
+CREATE TYPE origen_tarea AS ENUM ('ORIGINAL', 'HALLAZGO', 'PEDIDO_CLIENTE');
+
+-- La TAREA: unidad de ejecución (qué se hace, quién, cuándo, qué consume, cuánto cuesta).
+-- La ORDEN es la visita que las agrupa (cliente, vehículo, turno, entrega, factura).
 CREATE TABLE orden_item (
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     orden_id       uuid NOT NULL REFERENCES orden (id),
@@ -498,10 +704,26 @@ CREATE TABLE orden_item (
     cantidad       numeric(10, 2) NOT NULL DEFAULT 1 CHECK (cantidad > 0),
     precio_unitario numeric(14, 2) CHECK (precio_unitario >= 0),     -- sin IVA; se propone desde el catálogo
     alicuota_iva   numeric(4, 2) NOT NULL DEFAULT 21 CHECK (alicuota_iva IN (0, 2.5, 5, 10.5, 21, 27)),
+    lista_precio_item_id uuid REFERENCES lista_precio_item (id),     -- de qué lista salió el precio
     observaciones  text,
-    hecho_en       timestamptz,                    -- lo marca el operario desde la tablet
+    estado         estado_tarea NOT NULL DEFAULT 'PENDIENTE',
+    origen         origen_tarea NOT NULL DEFAULT 'ORIGINAL',
+    hallazgo_id    uuid,                                             -- FK más abajo (tabla hallazgo)
+    motivo         text,                                             -- por qué se agregó (en curso) o se canceló
+    agregado_por   uuid REFERENCES usuario (id),
+    agregado_en    timestamptz,
+    aprobacion_cliente_en     timestamptz,                           -- "consentimiento" para trabajos adicionales
+    aprobacion_cliente_canal  text CHECK (aprobacion_cliente_canal IN ('WHATSAPP', 'PRESENCIAL', 'TELEFONO', 'EMAIL')),
+    aprobacion_cliente_ref    text,                                  -- ej. id del mensaje de WhatsApp
+    hecho_en       timestamptz,    -- lo marca el operario desde la tablet
     hecho_por      uuid REFERENCES usuario (id),
-    CONSTRAINT item_hecho_completo CHECK ((hecho_en IS NULL) = (hecho_por IS NULL))
+    cancelado_por  uuid REFERENCES usuario (id),
+    cancelado_en   timestamptz,
+    CONSTRAINT item_hecho_completo CHECK ((estado = 'HECHO') = (hecho_en IS NOT NULL)
+                                          AND (hecho_en IS NULL) = (hecho_por IS NULL)),
+    CONSTRAINT item_cancelado_con_motivo CHECK (estado <> 'CANCELADO' OR motivo IS NOT NULL),
+    CONSTRAINT item_origen_hallazgo CHECK ((origen = 'HALLAZGO') = (hallazgo_id IS NOT NULL)),
+    CONSTRAINT item_aprobacion_completa CHECK ((aprobacion_cliente_en IS NULL) = (aprobacion_cliente_canal IS NULL))
 );
 CREATE INDEX orden_item_orden_idx ON orden_item (orden_id);
 
@@ -890,6 +1112,269 @@ CREATE TRIGGER propuesta_sin_borrado BEFORE DELETE ON propuesta_agente
     FOR EACH ROW EXECUTE FUNCTION prohibir_cambios();
 
 -- ---------------------------------------------------------------------
+-- Historia clínica del vehículo (ver PROCESO.md)
+-- ---------------------------------------------------------------------
+CREATE TYPE estado_hallazgo AS ENUM ('ABIERTO', 'PRESUPUESTADO', 'RECHAZADO_POR_CLIENTE', 'RESUELTO', 'DESCARTADO');
+
+-- Lo que se encuentra en el auto: daños previos al recibirlo, fallas, recomendaciones.
+-- Queda en la historia del auto aunque el cliente no quiera arreglarlo ("se le informó").
+CREATE TABLE hallazgo (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    vehiculo_id     uuid NOT NULL REFERENCES vehiculo (id),
+    orden_id        uuid REFERENCES orden (id),          -- en qué visita se encontró
+    tipo            text NOT NULL CHECK (tipo IN ('DANO_PREVIO', 'FALLA', 'RECOMENDACION', 'OBSERVACION')),
+    severidad       text NOT NULL CHECK (severidad IN ('INFO', 'ATENCION', 'URGENTE')),
+    descripcion     text NOT NULL,
+    foto_id         uuid REFERENCES adjunto (id),
+    registrado_por  uuid NOT NULL REFERENCES usuario (id),
+    dispositivo_id  uuid REFERENCES dispositivo (id),
+    registrado_en   timestamptz NOT NULL DEFAULT now(),
+    estado          estado_hallazgo NOT NULL DEFAULT 'ABIERTO',
+    resolucion      text,
+    CONSTRAINT hallazgo_cierre_con_motivo CHECK (
+        estado NOT IN ('RECHAZADO_POR_CLIENTE', 'RESUELTO', 'DESCARTADO') OR resolucion IS NOT NULL)
+);
+CREATE INDEX hallazgo_vehiculo_idx ON hallazgo (vehiculo_id, registrado_en);
+
+CREATE FUNCTION hallazgo_proteger() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.estado IN ('RESUELTO', 'DESCARTADO')
+       OR (to_jsonb(NEW) - ARRAY['estado', 'resolucion']) <> (to_jsonb(OLD) - ARRAY['estado', 'resolucion']) THEN
+        RAISE EXCEPTION 'Lo que se encontró en el auto no se reescribe: sólo cambia su estado'
+            USING ERRCODE = 'restrict_violation';
+    END IF;
+    RETURN NEW;
+END
+$$;
+CREATE TRIGGER hallazgo_proteger BEFORE UPDATE ON hallazgo
+    FOR EACH ROW EXECUTE FUNCTION hallazgo_proteger();
+CREATE TRIGGER hallazgo_sin_borrado BEFORE DELETE ON hallazgo
+    FOR EACH ROW EXECUTE FUNCTION prohibir_cambios();
+
+ALTER TABLE orden_item ADD CONSTRAINT orden_item_hallazgo_fk FOREIGN KEY (hallazgo_id) REFERENCES hallazgo (id);
+
+-- Lo que quedó instalado en el auto, con número de serie y garantía ("los implantes").
+CREATE TABLE componente_instalado (
+    id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    vehiculo_id      uuid NOT NULL REFERENCES vehiculo (id),
+    producto_id      uuid NOT NULL REFERENCES producto (id),
+    orden_item_id    uuid NOT NULL REFERENCES orden_item (id),
+    numero_serie     text,
+    instalado_en     timestamptz NOT NULL DEFAULT now(),
+    garantia_hasta   date,
+    retirado_en      timestamptz,
+    retirado_motivo  text,
+    reemplazado_por  uuid REFERENCES componente_instalado (id),
+    CONSTRAINT componente_retiro CHECK ((retirado_en IS NULL) = (retirado_motivo IS NULL))
+);
+-- Un mismo número de serie no puede estar instalado en dos autos a la vez.
+CREATE UNIQUE INDEX componente_serie_uq ON componente_instalado (producto_id, numero_serie)
+    WHERE numero_serie IS NOT NULL AND retirado_en IS NULL;
+CREATE INDEX componente_vehiculo_idx ON componente_instalado (vehiculo_id);
+
+CREATE FUNCTION componente_validar() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' THEN       -- sólo se registra el retiro o el reemplazo, una vez
+        IF OLD.retirado_en IS NOT NULL
+           OR (to_jsonb(NEW) - ARRAY['retirado_en', 'retirado_motivo', 'reemplazado_por'])
+              <> (to_jsonb(OLD) - ARRAY['retirado_en', 'retirado_motivo', 'reemplazado_por']) THEN
+            RAISE EXCEPTION 'Un componente instalado sólo se puede dar de baja (retiro o reemplazo)'
+                USING ERRCODE = 'restrict_violation';
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM orden_item i JOIN orden o ON o.id = i.orden_id
+                    WHERE i.id = NEW.orden_item_id AND o.vehiculo_id = NEW.vehiculo_id AND i.estado = 'HECHO') THEN
+        RAISE EXCEPTION 'El componente tiene que venir de una tarea hecha en ese mismo vehículo'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END
+$$;
+CREATE TRIGGER componente_validar BEFORE INSERT OR UPDATE ON componente_instalado
+    FOR EACH ROW EXECUTE FUNCTION componente_validar();
+CREATE TRIGGER componente_sin_borrado BEFORE DELETE ON componente_instalado
+    FOR EACH ROW EXECUTE FUNCTION prohibir_cambios();
+
+-- ---------------------------------------------------------------------
+-- Tareas: cambios en la marcha con trazabilidad
+-- ---------------------------------------------------------------------
+CREATE FUNCTION orden_item_validar() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_estado estado_orden;
+    v_libres text[] := ARRAY['estado', 'hecho_en', 'hecho_por', 'observaciones', 'motivo', 'cancelado_por',
+                             'cancelado_en', 'aprobacion_cliente_en', 'aprobacion_cliente_canal', 'aprobacion_cliente_ref'];
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        SELECT estado INTO v_estado FROM orden WHERE id = OLD.orden_id;
+        IF v_estado <> 'BORRADOR' THEN
+            RAISE EXCEPTION 'Una tarea de una orden confirmada no se borra: se cancela con motivo'
+                USING ERRCODE = 'restrict_violation';
+        END IF;
+        RETURN OLD;
+    END IF;
+
+    SELECT estado INTO v_estado FROM orden WHERE id = NEW.orden_id;
+
+    IF TG_OP = 'INSERT' THEN
+        IF v_estado IN ('TERMINADA', 'ENTREGADA', 'CANCELADA') THEN
+            RAISE EXCEPTION 'La orden está %: no se agregan tareas (si hace falta, se reabre)', v_estado
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.estado <> 'PENDIENTE' THEN
+            RAISE EXCEPTION 'Una tarea nace pendiente' USING ERRCODE = 'check_violation';
+        END IF;
+        IF v_estado <> 'BORRADOR' AND (NEW.origen = 'ORIGINAL' OR NEW.motivo IS NULL) THEN
+            RAISE EXCEPTION 'Con la orden confirmada, una tarea nueva indica de dónde sale (hallazgo o pedido del cliente) y por qué'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        NEW.agregado_por := COALESCE(NEW.agregado_por, ctx_uuid('app.usuario_id'));
+        NEW.agregado_en  := hora_del_evento();
+        RETURN NEW;
+    END IF;
+
+    -- UPDATE
+    IF v_estado IN ('ENTREGADA', 'CANCELADA') THEN
+        RAISE EXCEPTION 'La orden está %: sus tareas ya no se modifican', v_estado USING ERRCODE = 'restrict_violation';
+    END IF;
+    IF OLD.estado = 'CANCELADO' THEN
+        RAISE EXCEPTION 'Una tarea cancelada no se reactiva: se agrega otra' USING ERRCODE = 'restrict_violation';
+    END IF;
+    IF v_estado <> 'BORRADOR' AND (to_jsonb(NEW) - v_libres) <> (to_jsonb(OLD) - v_libres) THEN
+        RAISE EXCEPTION 'Con la orden confirmada, lo pactado de una tarea (qué, cuánto, a qué precio) no se edita: se cancela con motivo y se agrega otra'
+            USING ERRCODE = 'restrict_violation';
+    END IF;
+    IF OLD.aprobacion_cliente_en IS NOT NULL
+       AND (NEW.aprobacion_cliente_en, NEW.aprobacion_cliente_canal, NEW.aprobacion_cliente_ref)
+           IS DISTINCT FROM (OLD.aprobacion_cliente_en, OLD.aprobacion_cliente_canal, OLD.aprobacion_cliente_ref) THEN
+        RAISE EXCEPTION 'La aprobación del cliente ya registrada no se cambia' USING ERRCODE = 'restrict_violation';
+    END IF;
+
+    IF NEW.estado <> OLD.estado THEN
+        IF NOT ((OLD.estado = 'PENDIENTE' AND NEW.estado IN ('HECHO', 'CANCELADO'))
+             OR (OLD.estado = 'HECHO' AND NEW.estado = 'PENDIENTE' AND v_estado = 'EN_CURSO')) THEN
+            RAISE EXCEPTION 'Cambio de tarea inválido: % -> %', OLD.estado, NEW.estado USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.estado = 'HECHO' THEN
+            IF v_estado <> 'EN_CURSO' THEN
+                RAISE EXCEPTION 'Las tareas se marcan hechas con la orden en curso' USING ERRCODE = 'check_violation';
+            END IF;
+            IF NEW.origen <> 'ORIGINAL' AND COALESCE(NEW.precio_unitario, 0) > 0 AND NEW.aprobacion_cliente_en IS NULL THEN
+                RAISE EXCEPTION 'Trabajo adicional con costo: falta la aprobación del cliente' USING ERRCODE = 'check_violation';
+            END IF;
+            NEW.hecho_en  := COALESCE(NEW.hecho_en, hora_del_evento());
+            NEW.hecho_por := COALESCE(NEW.hecho_por, ctx_uuid('app.usuario_id'));
+        ELSIF NEW.estado = 'PENDIENTE' THEN          -- se rehace (control de calidad)
+            NEW.hecho_en := NULL;
+            NEW.hecho_por := NULL;
+        ELSE                                         -- CANCELADO
+            NEW.cancelado_por := COALESCE(NEW.cancelado_por, ctx_uuid('app.usuario_id'));
+            NEW.cancelado_en  := hora_del_evento();
+        END IF;
+    END IF;
+    RETURN NEW;
+END
+$$;
+CREATE TRIGGER orden_item_validar BEFORE INSERT OR UPDATE OR DELETE ON orden_item
+    FOR EACH ROW EXECUTE FUNCTION orden_item_validar();
+
+CREATE FUNCTION orden_item_registrar() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_estado  estado_orden;
+    v_numero  bigint;
+    v_tipo    text;
+BEGIN
+    SELECT estado, numero INTO v_estado, v_numero FROM orden WHERE id = NEW.orden_id;
+    IF TG_OP = 'INSERT' THEN
+        IF v_estado = 'BORRADOR' THEN
+            RETURN NULL;                             -- armando la orden: todavía no es un cambio
+        END IF;
+        v_tipo := 'TAREA_AGREGADA';
+        IF NEW.hallazgo_id IS NOT NULL THEN
+            UPDATE hallazgo SET estado = 'PRESUPUESTADO' WHERE id = NEW.hallazgo_id AND estado = 'ABIERTO';
+        END IF;
+    ELSIF NEW.estado IS DISTINCT FROM OLD.estado THEN
+        v_tipo := CASE NEW.estado WHEN 'HECHO' THEN 'TAREA_HECHA' WHEN 'CANCELADO' THEN 'TAREA_CANCELADA'
+                                  ELSE 'TAREA_REABIERTA' END;
+        IF NEW.estado = 'HECHO' AND NEW.hallazgo_id IS NOT NULL THEN
+            UPDATE hallazgo SET estado = 'RESUELTO', resolucion = 'Resuelto en OT-' || v_numero
+             WHERE id = NEW.hallazgo_id AND estado NOT IN ('RESUELTO', 'DESCARTADO');
+        END IF;
+    ELSIF NEW.aprobacion_cliente_en IS NOT NULL AND OLD.aprobacion_cliente_en IS NULL THEN
+        v_tipo := 'TAREA_APROBADA_POR_CLIENTE';
+    ELSE
+        RETURN NULL;
+    END IF;
+    INSERT INTO evento_orden (orden_id, tipo, usuario_id, dispositivo_id, acceso_emergencia_id, datos, ocurrido_en)
+    VALUES (NEW.orden_id, v_tipo, ctx_uuid('app.usuario_id'), ctx_uuid('app.dispositivo_id'),
+            ctx_uuid('app.acceso_emergencia_id'),
+            jsonb_build_object('tarea_id', NEW.id, 'descripcion', NEW.descripcion, 'origen', NEW.origen,
+                               'motivo', NEW.motivo, 'precio_unitario', NEW.precio_unitario,
+                               'canal_aprobacion', NEW.aprobacion_cliente_canal),
+            hora_del_evento());
+    RETURN NULL;
+END
+$$;
+CREATE TRIGGER orden_item_registrar AFTER INSERT OR UPDATE ON orden_item
+    FOR EACH ROW EXECUTE FUNCTION orden_item_registrar();
+
+-- ---------------------------------------------------------------------
+-- Stock: libro de movimientos (el stock es la suma; nada se pisa ni se borra)
+-- ---------------------------------------------------------------------
+CREATE TYPE tipo_movimiento AS ENUM ('INVENTARIO_INICIAL', 'INGRESO', 'CONSUMO', 'DEVOLUCION', 'AJUSTE');
+
+CREATE TABLE movimiento_stock (
+    id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    producto_id     uuid NOT NULL REFERENCES producto (id),
+    tipo            tipo_movimiento NOT NULL,
+    cantidad        numeric(10, 2) NOT NULL CHECK (cantidad <> 0),   -- con signo: + entra, − sale
+    orden_item_id   uuid REFERENCES orden_item (id),                 -- CONSUMO / DEVOLUCION: contra qué tarea
+    documento       text,                                            -- INGRESO: remito o factura del proveedor
+    motivo          text,                                            -- AJUSTE: por qué
+    registrado_por  uuid NOT NULL REFERENCES usuario (id),
+    aprobado_por    uuid REFERENCES usuario (id),                    -- AJUSTE: otra persona
+    ocurrido_en     timestamptz NOT NULL DEFAULT now(),
+    registrado_en   timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT mov_signo CHECK (
+        (tipo IN ('INVENTARIO_INICIAL', 'INGRESO', 'DEVOLUCION') AND cantidad > 0)
+     OR (tipo = 'CONSUMO' AND cantidad < 0)
+     OR  tipo = 'AJUSTE'),
+    CONSTRAINT mov_tarea CHECK (tipo NOT IN ('CONSUMO', 'DEVOLUCION') OR orden_item_id IS NOT NULL),
+    CONSTRAINT mov_ingreso_con_documento CHECK (tipo <> 'INGRESO' OR documento IS NOT NULL),
+    CONSTRAINT mov_ajuste_aprobado CHECK (
+        tipo <> 'AJUSTE' OR (motivo IS NOT NULL AND aprobado_por IS NOT NULL AND aprobado_por <> registrado_por))
+);
+CREATE INDEX movimiento_stock_producto_idx ON movimiento_stock (producto_id, ocurrido_en);
+-- El inventario inicial se carga una sola vez por artículo (después todo son movimientos).
+CREATE UNIQUE INDEX movimiento_inventario_inicial_uq ON movimiento_stock (producto_id) WHERE tipo = 'INVENTARIO_INICIAL';
+
+CREATE FUNCTION movimiento_stock_validar() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.tipo = 'AJUSTE' AND NEW.aprobado_por IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM usuario WHERE id = NEW.aprobado_por AND rol IN ('ADMIN', 'ADMINISTRACION') AND activo) THEN
+        RAISE EXCEPTION 'Un ajuste de stock lo aprueba Administración' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF NEW.tipo IN ('CONSUMO', 'DEVOLUCION')
+       AND NOT EXISTS (SELECT 1 FROM orden_item i JOIN orden o ON o.id = i.orden_id
+                        WHERE i.id = NEW.orden_item_id AND o.estado IN ('EN_CURSO', 'PAUSADA', 'TERMINADA')) THEN
+        RAISE EXCEPTION 'El consumo se registra contra una tarea de una orden en curso o terminada'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    NEW.registrado_en := now();
+    RETURN NEW;
+END
+$$;
+CREATE TRIGGER movimiento_stock_validar BEFORE INSERT ON movimiento_stock
+    FOR EACH ROW EXECUTE FUNCTION movimiento_stock_validar();
+CREATE TRIGGER movimiento_stock_append_only BEFORE UPDATE OR DELETE ON movimiento_stock
+    FOR EACH ROW EXECUTE FUNCTION prohibir_cambios();
+
+-- ---------------------------------------------------------------------
 -- Historial (append-only) y sincronización de tablets
 -- ---------------------------------------------------------------------
 CREATE TABLE evento_orden (
@@ -944,12 +1429,22 @@ BEGIN
             RAISE EXCEPTION 'Transición inválida en OT-%: % -> %', OLD.numero, OLD.estado, NEW.estado
                 USING ERRCODE = 'check_violation';
         END IF;
-        IF NEW.estado = 'CONFIRMADA' AND NOT EXISTS (SELECT 1 FROM orden_item WHERE orden_id = NEW.id) THEN
+        IF NEW.estado = 'CONFIRMADA'
+           AND NOT EXISTS (SELECT 1 FROM orden_item WHERE orden_id = NEW.id AND estado <> 'CANCELADO') THEN
             RAISE EXCEPTION 'OT-% no tiene ítems a instalar', NEW.numero USING ERRCODE = 'check_violation';
         END IF;
         IF NEW.estado = 'AGENDADA'
            AND NOT EXISTS (SELECT 1 FROM turno WHERE orden_id = NEW.id AND estado = 'VIGENTE') THEN
             RAISE EXCEPTION 'OT-% no tiene turno asignado', NEW.numero USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.estado = 'TERMINADA' THEN
+            IF EXISTS (SELECT 1 FROM orden_item WHERE orden_id = NEW.id AND estado = 'PENDIENTE') THEN
+                RAISE EXCEPTION 'OT-% tiene tareas pendientes: se hacen o se cancelan con motivo antes de terminar', NEW.numero
+                    USING ERRCODE = 'check_violation';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM orden_item WHERE orden_id = NEW.id AND estado = 'HECHO') THEN
+                RAISE EXCEPTION 'OT-% no tiene ninguna tarea hecha', NEW.numero USING ERRCODE = 'check_violation';
+            END IF;
         END IF;
         IF NEW.estado = 'ENTREGADA' AND NOT EXISTS (SELECT 1 FROM acta_entrega WHERE orden_id = NEW.id) THEN
             RAISE EXCEPTION 'OT-% no tiene acta de entrega firmada', NEW.numero USING ERRCODE = 'check_violation';
@@ -1088,5 +1583,51 @@ SELECT d.id, d.nombre, d.tipo, d.app_version, d.ultima_sync_en, d.ops_pendientes
            ELSE 'VERDE'
        END AS semaforo
   FROM dispositivo d;
+
+-- La historia clínica del auto: una línea de tiempo con todo lo que le pasó.
+-- No incluye datos del cliente: si el auto cambia de dueño, la historia sigue
+-- sin exponer al dueño anterior.
+CREATE VIEW vista_historia_vehiculo AS
+SELECT o.vehiculo_id, o.creada_en AS fecha, 'VISITA' AS tipo,
+       'OT-' || o.numero || ' · ' || o.estado AS titulo,
+       jsonb_build_object('km', o.km_ingreso, 'estado', o.estado) AS detalle, o.id AS orden_id
+  FROM orden o WHERE o.vehiculo_id IS NOT NULL
+UNION ALL
+SELECT o.vehiculo_id, i.hecho_en, 'TAREA', i.descripcion,
+       jsonb_build_object('por', u.nombre, 'origen', i.origen), o.id
+  FROM orden_item i JOIN orden o ON o.id = i.orden_id LEFT JOIN usuario u ON u.id = i.hecho_por
+ WHERE i.estado = 'HECHO'
+UNION ALL
+SELECT h.vehiculo_id, h.registrado_en, 'HALLAZGO', h.descripcion,
+       jsonb_build_object('tipo', h.tipo, 'severidad', h.severidad, 'estado', h.estado), h.orden_id
+  FROM hallazgo h
+UNION ALL
+SELECT c.vehiculo_id, c.instalado_en, 'COMPONENTE', p.descripcion,
+       jsonb_build_object('serie', c.numero_serie, 'garantia_hasta', c.garantia_hasta,
+                          'retirado', c.retirado_en IS NOT NULL), i.orden_id
+  FROM componente_instalado c JOIN producto p ON p.id = c.producto_id JOIN orden_item i ON i.id = c.orden_item_id
+UNION ALL
+SELECT o.vehiculo_id, a.firmado_en, 'ENTREGA', 'Acta firmada · ' || a.conformidad,
+       jsonb_build_object('medio', a.medio), o.id
+  FROM acta_entrega a JOIN orden o ON o.id = a.orden_id;
+
+-- Stock físico por artículo (suma del libro de movimientos).
+CREATE VIEW vista_stock AS
+SELECT p.id AS producto_id, p.sku, p.descripcion,
+       COALESCE(sum(m.cantidad), 0) AS fisico,
+       max(m.ocurrido_en) AS ultimo_movimiento
+  FROM producto p LEFT JOIN movimiento_stock m ON m.producto_id = p.id
+ GROUP BY p.id, p.sku, p.descripcion;
+
+-- Precio vigente de cada artículo de marca: la última lista aprobada con vigencia <= hoy.
+CREATE VIEW vista_precio_vigente AS
+SELECT DISTINCT ON (p.id)
+       p.id AS producto_id, p.sku, p.descripcion, m.nombre AS marca, i.precio, l.moneda,
+       l.precios_con_iva, l.vigente_desde, l.id AS lista_id, i.id AS lista_precio_item_id
+  FROM producto p
+  JOIN marca m ON m.id = p.marca_id
+  JOIN lista_precio_item i ON i.producto_id = p.id
+  JOIN lista_precio l ON l.id = i.lista_id AND l.estado = 'APROBADA' AND l.vigente_desde <= current_date
+ ORDER BY p.id, l.vigente_desde DESC;
 
 COMMIT;

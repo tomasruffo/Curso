@@ -34,6 +34,7 @@ Los agentes llegan en la **etapa 2** ([ETAPAS.md](ETAPAS.md)), cuando ya hay dat
 | **Reposición de stock** | 2c | Revisa stock, agenda y consumo; arma compras sugeridas y detecta faltantes | **Agente** (decide qué investigar) | Orden de compra, ajuste de stock | Administración |
 | **Recepción de mercadería** | 2c | Lee el remito o factura del proveedor y lo cruza con la orden de compra | Flujo fijo (extracción + cruce por código) | Ingreso de mercadería | Administración, Coordinador |
 | **Recepción de pedidos por WhatsApp** | 2a | Lee el mensaje del cliente y arma el borrador de la orden y una respuesta | Flujo fijo (extracción + búsqueda) | Borrador de orden, respuesta al cliente | Vendedor, Coordinador |
+| **Lectura de listas de precios** | 2 | Cuando una marca cambia el formato de su Excel, propone cómo leerlo (qué columna es el código, el precio, el IVA) | Flujo fijo | Configuración de lectura | Responsable de la marca |
 | **Asistente de agenda** | 2c | Cuando falta un operario o un repuesto, propone cómo reprogramar | **Agente** | Reprogramación | Coordinador |
 | *Más adelante* | — | Revisión de facturas antes de emitir; preguntas de gestión ("¿qué margen dejaron las alarmas en octubre?"); control de fotos obligatorias | Llamada simple o agente de sólo lectura | — | — |
 

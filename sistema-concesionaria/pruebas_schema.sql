@@ -193,7 +193,7 @@ SELECT pg_temp.debe_fallar('la misma operación reintentada no se aplica dos vec
       VALUES ('30000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001',
               'INICIAR', '{}', '2026-11-12 09:02-03', 'APLICADA')$$, '23505');
 
-UPDATE orden_item SET hecho_en = '2026-11-12 10:10-03', hecho_por = 'a0000000-0000-0000-0000-000000000003'
+UPDATE orden_item SET estado = 'HECHO', hecho_en = '2026-11-12 10:10-03', hecho_por = 'a0000000-0000-0000-0000-000000000003'
  WHERE id = '11000000-0000-0000-0000-000000000001';
 UPDATE orden SET estado = 'TERMINADA' WHERE id = '10000000-0000-0000-0000-000000000001';
 
@@ -253,7 +253,7 @@ SELECT pg_temp.debe_fallar('reabrir una orden entregada',
 -- ---------------------------------------------------------------------
 SELECT pg_temp.verificar('el historial registra el recorrido completo de la orden',
     (SELECT array_agg(estado_nuevo ORDER BY id) FROM evento_orden
-      WHERE orden_id = '10000000-0000-0000-0000-000000000001')
+      WHERE orden_id = '10000000-0000-0000-0000-000000000001' AND tipo IN ('CREADA', 'CAMBIO_ESTADO'))
     = ARRAY['BORRADOR', 'CONFIRMADA', 'AGENDADA', 'EN_CURSO', 'TERMINADA', 'ENTREGADA']::estado_orden[]);
 SELECT pg_temp.verificar('el historial guarda quién y desde qué tablet',
     EXISTS (SELECT 1 FROM evento_orden
@@ -298,6 +298,8 @@ SELECT pg_temp.debe_fallar('cargar con hora real de hace un mes (error de tipeo)
 SELECT set_config('app.hora_real', (now() - interval '1 day')::text, true);
 UPDATE orden SET estado = 'EN_CURSO'  WHERE id = '10000000-0000-0000-0000-000000000003';
 SELECT set_config('app.hora_real', (now() - interval '22 hours')::text, true);
+UPDATE orden_item SET estado = 'HECHO', hecho_por = 'a0000000-0000-0000-0000-000000000004'
+ WHERE orden_id = '10000000-0000-0000-0000-000000000003';
 UPDATE orden SET estado = 'TERMINADA' WHERE id = '10000000-0000-0000-0000-000000000003';
 
 -- Se entregó con el acta de papel A-0001
@@ -622,6 +624,237 @@ INSERT INTO propuesta_agente (id, agente, modelo, tipo, payload, justificacion, 
 SELECT pg_temp.debe_fallar('aprobar una propuesta vencida',
     $$UPDATE propuesta_agente SET estado = 'APROBADA', revisada_por = 'a0000000-0000-0000-0000-000000000007',
              revisada_en = now() WHERE id = '80000000-0000-0000-0000-000000000002'$$, '23514');
+
+-- ---------------------------------------------------------------------
+-- Listas de precios por marca: automatizable, pero aprueba el responsable
+-- ---------------------------------------------------------------------
+SET LOCAL app.usuario_id = 'a0000000-0000-0000-0000-000000000006';
+SET LOCAL app.dispositivo_id = '';
+INSERT INTO marca (id, nombre, responsable_precios_id) VALUES
+    ('b1000000-0000-0000-0000-000000000001', 'Toyota', 'a0000000-0000-0000-0000-000000000007');
+
+-- Lista de hace 40 días, cargada a mano
+INSERT INTO lista_precio (id, marca_id, vigente_desde, archivo_nombre, archivo_sha256, precios_con_iva, origen_carga, cargada_por) VALUES
+    ('b2000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000001', current_date - 40,
+     'toyota-accesorios-oct.xlsx', repeat('d', 64), false, 'MANUAL', 'a0000000-0000-0000-0000-000000000007');
+INSERT INTO lista_precio_item (lista_id, codigo_marca, descripcion, precio) VALUES
+    ('b2000000-0000-0000-0000-000000000001', ' acc-alr ', 'Alarma original con sensor', 90000),
+    ('b2000000-0000-0000-0000-000000000001', 'ACC-PPF', 'Film protector de capot', 50000);
+
+SELECT pg_temp.debe_fallar('un vendedor no puede aprobar una lista de precios',
+    $$UPDATE lista_precio SET estado = 'APROBADA', revisada_por = 'a0000000-0000-0000-0000-000000000002'
+       WHERE id = 'b2000000-0000-0000-0000-000000000001'$$, '42501');
+SELECT pg_temp.debe_fallar('ni el admin: aprueba sólo el responsable de precios de la marca',
+    $$UPDATE lista_precio SET estado = 'APROBADA', revisada_por = 'a0000000-0000-0000-0000-000000000006'
+       WHERE id = 'b2000000-0000-0000-0000-000000000001'$$, '42501');
+UPDATE lista_precio SET estado = 'APROBADA', revisada_por = 'a0000000-0000-0000-0000-000000000007'
+ WHERE id = 'b2000000-0000-0000-0000-000000000001';
+SELECT pg_temp.verificar('al aprobar, los códigos nuevos de la marca se dan de alta en el catálogo',
+    (SELECT count(*) = 2 FROM producto WHERE marca_id = 'b1000000-0000-0000-0000-000000000001')
+    AND NOT EXISTS (SELECT 1 FROM lista_precio_item WHERE lista_id = 'b2000000-0000-0000-0000-000000000001' AND producto_id IS NULL));
+SELECT pg_temp.verificar('el código de la marca se normaliza (" acc-alr " -> ACC-ALR)',
+    EXISTS (SELECT 1 FROM producto WHERE sku = 'TOY-ACC-ALR' AND codigo_marca = 'ACC-ALR'));
+
+-- Lista de hace 10 días, traída por el importador automático
+INSERT INTO lista_precio (id, marca_id, vigente_desde, archivo_nombre, archivo_sha256, precios_con_iva, origen_carga) VALUES
+    ('b2000000-0000-0000-0000-000000000002', 'b1000000-0000-0000-0000-000000000001', current_date - 10,
+     'toyota-accesorios-nov.xlsx', repeat('e', 64), false, 'AUTOMATICA');
+INSERT INTO lista_precio_item (lista_id, codigo_marca, descripcion, precio, precio_anterior) VALUES
+    ('b2000000-0000-0000-0000-000000000002', 'ACC-ALR', 'Alarma original con sensor', 100000, NULL),
+    ('b2000000-0000-0000-0000-000000000002', 'ACC-PPF', 'Film protector de capot', 75000, 74000);  -- intenta disimular la suba
+SELECT pg_temp.verificar('la base calcula el precio anterior: el importador no puede disimular una suba',
+    (SELECT precio_anterior = 50000 AND variacion_pct = 50 FROM lista_precio_item
+      WHERE lista_id = 'b2000000-0000-0000-0000-000000000002' AND codigo_marca = 'ACC-PPF'));
+SELECT pg_temp.debe_fallar('aprobar una suba del 50 % sin confirmarla',
+    $$UPDATE lista_precio SET estado = 'APROBADA', revisada_por = 'a0000000-0000-0000-0000-000000000007'
+       WHERE id = 'b2000000-0000-0000-0000-000000000002'$$, '23514');
+UPDATE lista_precio_item SET variacion_confirmada = true
+ WHERE lista_id = 'b2000000-0000-0000-0000-000000000002' AND codigo_marca = 'ACC-PPF';
+UPDATE lista_precio SET estado = 'APROBADA', revisada_por = 'a0000000-0000-0000-0000-000000000007'
+ WHERE id = 'b2000000-0000-0000-0000-000000000002';
+SELECT pg_temp.debe_fallar('cambiar un precio de una lista ya aprobada',
+    $$UPDATE lista_precio_item SET precio = 1
+       WHERE lista_id = 'b2000000-0000-0000-0000-000000000002' AND codigo_marca = 'ACC-ALR'$$, '23001');
+SELECT pg_temp.debe_fallar('cambiar la vigencia de una lista ya aprobada',
+    $$UPDATE lista_precio SET vigente_desde = current_date WHERE id = 'b2000000-0000-0000-0000-000000000002'$$, '23001');
+SELECT pg_temp.verificar('el precio vigente sale de la última lista aprobada',
+    (SELECT precio FROM vista_precio_vigente WHERE sku = 'TOY-ACC-ALR') = 100000);
+
+INSERT INTO lista_precio (id, marca_id, vigente_desde, archivo_nombre, archivo_sha256, precios_con_iva, origen_carga, cargada_por) VALUES
+    ('b2000000-0000-0000-0000-000000000003', 'b1000000-0000-0000-0000-000000000001', current_date + 20,
+     'toyota-accesorios-dic.xlsx', repeat('f', 64), false, 'MANUAL', 'a0000000-0000-0000-0000-000000000007');
+INSERT INTO lista_precio_item (lista_id, codigo_marca, descripcion, precio) VALUES
+    ('b2000000-0000-0000-0000-000000000003', 'ACC-ALR', 'Alarma original con sensor', 1000);
+SELECT pg_temp.debe_fallar('rechazar una lista sin decir por qué',
+    $$UPDATE lista_precio SET estado = 'RECHAZADA', revisada_por = 'a0000000-0000-0000-0000-000000000007'
+       WHERE id = 'b2000000-0000-0000-0000-000000000003'$$, '23514');
+
+UPDATE marca SET responsable_precios_id = 'a0000000-0000-0000-0000-000000000006'
+ WHERE id = 'b1000000-0000-0000-0000-000000000001';
+SELECT pg_temp.verificar('cambiar al responsable de precios de una marca queda en el registro de seguridad',
+    EXISTS (SELECT 1 FROM evento_seguridad WHERE tipo = 'RESPONSABLE_PRECIOS_CAMBIADO'));
+
+-- ---------------------------------------------------------------------
+-- Historia clínica del auto y cambios en la marcha
+-- ---------------------------------------------------------------------
+SET LOCAL app.usuario_id = 'a0000000-0000-0000-0000-000000000002';   -- vendedor arma la orden
+INSERT INTO orden (id, cliente_id, vehiculo_id, km_ingreso, origen, creada_por) VALUES
+    ('10000000-0000-0000-0000-000000000005', 'e0000000-0000-0000-0000-000000000001',
+     'f0000000-0000-0000-0000-000000000001', 18420, 'MOSTRADOR', 'a0000000-0000-0000-0000-000000000002');
+INSERT INTO orden_item (id, orden_id, producto_id, descripcion, precio_unitario, lista_precio_item_id)
+SELECT '11000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000005',
+       producto_id, descripcion, precio, lista_precio_item_id
+  FROM vista_precio_vigente WHERE sku = 'TOY-ACC-ALR';
+UPDATE orden SET estado = 'CONFIRMADA' WHERE id = '10000000-0000-0000-0000-000000000005';
+
+-- Recepción: se anota lo que el auto ya traía
+INSERT INTO hallazgo (id, vehiculo_id, orden_id, tipo, severidad, descripcion, registrado_por) VALUES
+    ('12000000-0000-0000-0000-000000000001', 'f0000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000005',
+     'DANO_PREVIO', 'INFO', 'Rayón de 10 cm en el paragolpes trasero', 'a0000000-0000-0000-0000-000000000002');
+INSERT INTO turno (orden_id, operario_id, rango, asignado_por) VALUES
+    ('10000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000003',
+     '[2030-03-04 09:00-03, 2030-03-04 13:00-03)', 'a0000000-0000-0000-0000-000000000001');
+
+SET LOCAL app.usuario_id = 'a0000000-0000-0000-0000-000000000003';   -- Juan, en el box
+UPDATE orden SET estado = 'EN_CURSO' WHERE id = '10000000-0000-0000-0000-000000000005';
+
+-- En plena instalación, Juan encuentra algo
+INSERT INTO hallazgo (id, vehiculo_id, orden_id, tipo, severidad, descripcion, registrado_por) VALUES
+    ('12000000-0000-0000-0000-000000000002', 'f0000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000005',
+     'FALLA', 'ATENCION', 'Batería en 11,2 V: con la alarma se puede descargar', 'a0000000-0000-0000-0000-000000000003');
+INSERT INTO hallazgo (id, vehiculo_id, orden_id, tipo, severidad, descripcion, registrado_por) VALUES
+    ('12000000-0000-0000-0000-000000000003', 'f0000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000005',
+     'RECOMENDACION', 'ATENCION', 'Cubiertas delanteras con 2 mm de dibujo', 'a0000000-0000-0000-0000-000000000003');
+
+SELECT pg_temp.debe_fallar('con la orden en curso, agregar una tarea sin decir de dónde sale',
+    $$INSERT INTO orden_item (orden_id, descripcion) VALUES ('10000000-0000-0000-0000-000000000005', 'Batería nueva')$$, '23514');
+SELECT pg_temp.debe_fallar('tarea "por hallazgo" sin indicar cuál',
+    $$INSERT INTO orden_item (orden_id, descripcion, origen, motivo)
+      VALUES ('10000000-0000-0000-0000-000000000005', 'Batería nueva', 'HALLAZGO', 'Batería baja')$$, '23514');
+
+INSERT INTO orden_item (id, orden_id, descripcion, precio_unitario, origen, hallazgo_id, motivo) VALUES
+    ('11000000-0000-0000-0000-000000000006', '10000000-0000-0000-0000-000000000005', 'Batería 12 V 65 Ah', 95000,
+     'HALLAZGO', '12000000-0000-0000-0000-000000000002', 'Batería baja detectada al instalar la alarma');
+SELECT pg_temp.verificar('al presupuestarlo, el hallazgo pasa a PRESUPUESTADO',
+    (SELECT estado = 'PRESUPUESTADO' FROM hallazgo WHERE id = '12000000-0000-0000-0000-000000000002'));
+SELECT pg_temp.debe_fallar('hacer un trabajo adicional con costo sin la aprobación del cliente',
+    $$UPDATE orden_item SET estado = 'HECHO' WHERE id = '11000000-0000-0000-0000-000000000006'$$, '23514');
+
+UPDATE orden_item SET aprobacion_cliente_en = now(), aprobacion_cliente_canal = 'WHATSAPP',
+       aprobacion_cliente_ref = 'wamid.HBgNNTQ5MTE1NTU1MTIzNA'
+ WHERE id = '11000000-0000-0000-0000-000000000006';
+UPDATE orden_item SET estado = 'HECHO' WHERE id = '11000000-0000-0000-0000-000000000006';
+SELECT pg_temp.verificar('al hacer la tarea, el hallazgo queda resuelto en la historia del auto',
+    (SELECT estado = 'RESUELTO' AND resolucion LIKE 'Resuelto en OT-%' FROM hallazgo WHERE id = '12000000-0000-0000-0000-000000000002'));
+SELECT pg_temp.debe_fallar('cambiar el precio de una tarea ya pactada',
+    $$UPDATE orden_item SET precio_unitario = 80000 WHERE id = '11000000-0000-0000-0000-000000000006'$$, '23001');
+SELECT pg_temp.debe_fallar('cambiar la aprobación del cliente ya registrada',
+    $$UPDATE orden_item SET aprobacion_cliente_canal = 'TELEFONO' WHERE id = '11000000-0000-0000-0000-000000000006'$$, '23001');
+
+-- El cliente pide algo más y después se arrepiente
+INSERT INTO orden_item (id, orden_id, descripcion, precio_unitario, origen, motivo) VALUES
+    ('11000000-0000-0000-0000-000000000007', '10000000-0000-0000-0000-000000000005', 'Polarizado 70 %', 120000,
+     'PEDIDO_CLIENTE', 'Lo pidió por WhatsApp a media mañana');
+SELECT pg_temp.debe_fallar('borrar una tarea de una orden confirmada (se cancela)',
+    $$DELETE FROM orden_item WHERE id = '11000000-0000-0000-0000-000000000007'$$, '23001');
+SELECT pg_temp.debe_fallar('terminar la orden con tareas pendientes',
+    $$UPDATE orden SET estado = 'TERMINADA' WHERE id = '10000000-0000-0000-0000-000000000005'$$, '23514');
+SELECT pg_temp.debe_fallar('cancelar una tarea sin motivo',
+    $$UPDATE orden_item SET estado = 'CANCELADO', motivo = NULL WHERE id = '11000000-0000-0000-0000-000000000007'$$, '23514');
+UPDATE orden_item SET estado = 'CANCELADO', motivo = 'El cliente prefiere hacerlo en otra visita'
+ WHERE id = '11000000-0000-0000-0000-000000000007';
+
+UPDATE orden_item SET estado = 'HECHO' WHERE id = '11000000-0000-0000-0000-000000000005';
+UPDATE orden SET estado = 'TERMINADA' WHERE id = '10000000-0000-0000-0000-000000000005';
+SELECT pg_temp.debe_fallar('agregar una tarea a una orden terminada',
+    $$INSERT INTO orden_item (orden_id, descripcion, origen, motivo)
+      VALUES ('10000000-0000-0000-0000-000000000005', 'Lavado', 'PEDIDO_CLIENTE', 'Lo pidió al retirar')$$, '23514');
+SELECT pg_temp.verificar('el historial de la orden guarda cada cambio de tareas, con su motivo',
+    (SELECT count(*) FILTER (WHERE tipo = 'TAREA_AGREGADA') = 2
+        AND count(*) FILTER (WHERE tipo = 'TAREA_APROBADA_POR_CLIENTE') = 1
+        AND count(*) FILTER (WHERE tipo = 'TAREA_CANCELADA') = 1
+        AND count(*) FILTER (WHERE tipo = 'TAREA_HECHA') = 2
+       FROM evento_orden WHERE orden_id = '10000000-0000-0000-0000-000000000005'));
+
+-- Lo que quedó instalado, con serie y garantía
+INSERT INTO componente_instalado (vehiculo_id, producto_id, orden_item_id, numero_serie, garantia_hasta)
+SELECT 'f0000000-0000-0000-0000-000000000001', producto_id, id, 'X200-0091822', current_date + 365
+  FROM orden_item WHERE id = '11000000-0000-0000-0000-000000000005';
+SELECT pg_temp.debe_fallar('registrar un componente con una tarea de otro auto',
+    $$INSERT INTO componente_instalado (vehiculo_id, producto_id, orden_item_id, numero_serie)
+      SELECT 'f0000000-0000-0000-0000-000000000002', producto_id, id, 'X200-0000001'
+        FROM orden_item WHERE id = '11000000-0000-0000-0000-000000000005'$$, '23514');
+SELECT pg_temp.debe_fallar('el mismo número de serie instalado en dos autos a la vez',
+    $$INSERT INTO componente_instalado (vehiculo_id, producto_id, orden_item_id, numero_serie)
+      SELECT 'f0000000-0000-0000-0000-000000000002', (SELECT id FROM producto WHERE sku = 'TOY-ACC-ALR'), id, 'X200-0091822'
+        FROM orden_item WHERE orden_id = '10000000-0000-0000-0000-000000000003'$$, '23505');
+SELECT pg_temp.debe_fallar('borrar un componente instalado (se da de baja con motivo)',
+    $$DELETE FROM componente_instalado$$, '23001');
+
+SELECT pg_temp.debe_fallar('reescribir lo que se encontró en el auto',
+    $$UPDATE hallazgo SET descripcion = 'Nada' WHERE id = '12000000-0000-0000-0000-000000000001'$$, '23001');
+SELECT pg_temp.debe_fallar('marcar que el cliente rechazó la recomendación sin dejar constancia',
+    $$UPDATE hallazgo SET estado = 'RECHAZADO_POR_CLIENTE' WHERE id = '12000000-0000-0000-0000-000000000003'$$, '23514');
+UPDATE hallazgo SET estado = 'RECHAZADO_POR_CLIENTE', resolucion = 'Se le mostró la foto; prefiere cambiarlas más adelante'
+ WHERE id = '12000000-0000-0000-0000-000000000003';
+
+SELECT pg_temp.verificar('la historia del auto junta visitas, tareas, hallazgos, componentes y entregas',
+    (SELECT count(DISTINCT tipo) = 5 FROM vista_historia_vehiculo WHERE vehiculo_id = 'f0000000-0000-0000-0000-000000000001'));
+SELECT pg_temp.verificar('la historia del auto no expone datos del dueño',
+    NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vista_historia_vehiculo'
+                 AND column_name ~ '(cliente|doc|telefono|email)'));
+
+INSERT INTO cliente (id, nombre) VALUES ('e0000000-0000-0000-0000-000000000002', 'Jorge Díaz');
+UPDATE vehiculo SET cliente_id = 'e0000000-0000-0000-0000-000000000002' WHERE id = 'f0000000-0000-0000-0000-000000000001';
+SELECT pg_temp.verificar('el cambio de dueño queda registrado y la historia sigue con el auto',
+    (SELECT count(*) = 2 AND count(*) FILTER (WHERE hasta IS NULL AND cliente_id = 'e0000000-0000-0000-0000-000000000002') = 1
+       FROM vehiculo_titular WHERE vehiculo_id = 'f0000000-0000-0000-0000-000000000001'));
+
+-- ---------------------------------------------------------------------
+-- Stock: carga y movimientos
+-- ---------------------------------------------------------------------
+SET LOCAL app.usuario_id = 'a0000000-0000-0000-0000-000000000007';
+INSERT INTO movimiento_stock (producto_id, tipo, cantidad, registrado_por)
+SELECT id, 'INVENTARIO_INICIAL', 14, 'a0000000-0000-0000-0000-000000000007' FROM producto WHERE sku = 'TOY-ACC-ALR';
+SELECT pg_temp.debe_fallar('cargar dos veces el inventario inicial de un artículo',
+    $$INSERT INTO movimiento_stock (producto_id, tipo, cantidad, registrado_por)
+      SELECT id, 'INVENTARIO_INICIAL', 3, 'a0000000-0000-0000-0000-000000000007' FROM producto WHERE sku = 'TOY-ACC-ALR'$$, '23505');
+SELECT pg_temp.debe_fallar('ingreso de mercadería sin remito',
+    $$INSERT INTO movimiento_stock (producto_id, tipo, cantidad, registrado_por)
+      SELECT id, 'INGRESO', 15, 'a0000000-0000-0000-0000-000000000007' FROM producto WHERE sku = 'TOY-ACC-ALR'$$, '23514');
+INSERT INTO movimiento_stock (producto_id, tipo, cantidad, documento, registrado_por)
+SELECT id, 'INGRESO', 15, 'Remito 0001-00004512', 'a0000000-0000-0000-0000-000000000007' FROM producto WHERE sku = 'TOY-ACC-ALR';
+SELECT pg_temp.debe_fallar('un consumo que suma en vez de restar',
+    $$INSERT INTO movimiento_stock (producto_id, tipo, cantidad, orden_item_id, registrado_por)
+      SELECT id, 'CONSUMO', 1, '11000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000003'
+        FROM producto WHERE sku = 'TOY-ACC-ALR'$$, '23514');
+INSERT INTO movimiento_stock (producto_id, tipo, cantidad, orden_item_id, registrado_por)
+SELECT id, 'CONSUMO', -1, '11000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000003'
+  FROM producto WHERE sku = 'TOY-ACC-ALR';
+SELECT pg_temp.debe_fallar('consumir contra una tarea de una orden cancelada',
+    $$INSERT INTO movimiento_stock (producto_id, tipo, cantidad, orden_item_id, registrado_por)
+      SELECT p.id, 'CONSUMO', -1, i.id, 'a0000000-0000-0000-0000-000000000003'
+        FROM producto p, orden_item i
+       WHERE p.sku = 'TOY-ACC-ALR' AND i.orden_id = '10000000-0000-0000-0000-000000000002'$$, '23514');
+SELECT pg_temp.debe_fallar('ajuste de stock sin aprobación',
+    $$INSERT INTO movimiento_stock (producto_id, tipo, cantidad, motivo, registrado_por)
+      SELECT id, 'AJUSTE', -1, 'Conteo', 'a0000000-0000-0000-0000-000000000007' FROM producto WHERE sku = 'TOY-ACC-ALR'$$, '23514');
+SELECT pg_temp.debe_fallar('ajuste aprobado por la misma persona que lo carga',
+    $$INSERT INTO movimiento_stock (producto_id, tipo, cantidad, motivo, registrado_por, aprobado_por)
+      SELECT id, 'AJUSTE', -1, 'Conteo', 'a0000000-0000-0000-0000-000000000007', 'a0000000-0000-0000-0000-000000000007'
+        FROM producto WHERE sku = 'TOY-ACC-ALR'$$, '23514');
+SELECT pg_temp.debe_fallar('ajuste aprobado por alguien que no es Administración',
+    $$INSERT INTO movimiento_stock (producto_id, tipo, cantidad, motivo, registrado_por, aprobado_por)
+      SELECT id, 'AJUSTE', -1, 'Conteo', 'a0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000002'
+        FROM producto WHERE sku = 'TOY-ACC-ALR'$$, '42501');
+INSERT INTO movimiento_stock (producto_id, tipo, cantidad, motivo, registrado_por, aprobado_por)
+SELECT id, 'AJUSTE', -1, 'Conteo semanal: falta 1 unidad', 'a0000000-0000-0000-0000-000000000003',
+       'a0000000-0000-0000-0000-000000000007'
+  FROM producto WHERE sku = 'TOY-ACC-ALR';
+SELECT pg_temp.verificar('el stock es la suma del libro de movimientos (14 + 15 − 1 − 1 = 27)',
+    (SELECT fisico FROM vista_stock WHERE sku = 'TOY-ACC-ALR') = 27);
+SELECT pg_temp.debe_fallar('borrar un movimiento (un error se corrige con otro movimiento)',
+    $$DELETE FROM movimiento_stock$$, '23001');
 
 \echo '>>> Todas las pruebas pasaron'
 ROLLBACK;
