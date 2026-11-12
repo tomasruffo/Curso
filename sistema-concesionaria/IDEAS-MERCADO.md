@@ -30,6 +30,40 @@ Sin cambios: kits por modelo (3), recepción y control de calidad con fotos (4),
 
 ---
 
+## Contexto confirmado: posventa oficial de varias marcas chinas
+
+El taller **trabaja mucho con marcas de autos y es posventa oficial de varias marcas chinas**. Eso cambia las prioridades. El taller ya no sólo instala accesorios: hace service, reparaciones, **garantías de fábrica**, **campañas** de las marcas y vende repuestos originales, para varias marcas a la vez.
+
+### Ideas nuevas que suma ser posventa oficial
+
+Son criterio propio sobre cómo funciona una posventa oficial. Hay que confirmarlas con el taller y con cada marca.
+
+| # | Idea | Qué hace | Etapa sugerida | Complejidad |
+|---|---|---|---|---|
+| 21 | **Reclamos de garantía a cada marca** | Cada trabajo en garantía se arma como reclamo a la marca: VIN, km, falla, fotos, pieza retenida y mano de obra según el **baremo de la marca**. Se sigue el estado (presentado → aprobado o rechazado → cobrado), los **plazos para presentar** y los motivos de rechazo. Es la evolución de la idea 12 y, en una posventa oficial, suele ser **la plata más grande en juego** | **1** | Media |
+| 22 | **Campañas técnicas y recalls** | Cada marca manda su lista de VIN afectados (igual que las listas de precios, con responsable). **Al ingresar un auto, el sistema avisa si tiene una campaña pendiente**, aunque el cliente venga por otra cosa | **1** | Baja |
+| 23 | **Tipo de trabajo y quién paga** | Cada tarea dice qué es (service, reparación, garantía, campaña, accesorio, preparación del 0 km) y quién la paga (cliente, marca, concesionaria, interno). Une las ideas 2 y 21 | **1** | Media |
+| 24 | **Plan de mantenimiento por marca y modelo** | Los services programados (por km y por meses) de cada modelo, cargados por marca. El sistema calcula el próximo service desde la historia clínica y **avisa al cliente por WhatsApp** | 2 | Media |
+| 25 | **Técnicos habilitados por marca y tecnología** | Qué marcas y tecnologías puede atender cada técnico; por ejemplo, **alta tensión en eléctricos e híbridos**. La agenda sólo asigna a técnicos habilitados | **1** | Baja |
+| 26 | **Baremos de tiempos por marca** | Los tiempos que define cada marca, con los que paga la garantía, cargados igual que las listas de precios. Es la versión "por marca" de la idea 3 | 2 | Baja |
+| 27 | **Indicadores y encuestas que pide cada marca** | Los indicadores que pide cada terminal (satisfacción, tiempos, retención), listos para reportar. En Argentina, Tecnom ya automatiza las encuestas que piden las terminales ([Tecnom](https://intercom.help/tecnom/es/articles/13403547-que-es-tecnom-boxes-touch-y-con-que-otras-herramientas-interactua)) | 2 | Media |
+
+### Cómo cambian las ideas anteriores
+- **1. Órdenes de concesionarias:** vuelve a aplicar si las concesionarias de esas marcas le mandan autos (preparación del 0 km, accesorios).
+- **12. Garantías y retrabajos:** pasa a ser la idea 21, mucho más importante.
+- **17. Canales externos:** puede volver a aplicar si alguna de las marcas vende service por internet, como hizo GM con Mercado Libre.
+- **Listas de precios por marca:** ya está en el modelo y encaja: son las listas de repuestos originales de cada marca.
+- **Historia clínica:** además de lo que ya guarda, **prueba que el auto hizo sus services en la red oficial**, que es lo que mantiene la garantía.
+
+### Para confirmar con el taller
+1. ¿Qué marcas atiende?
+2. ¿Cómo se presentan hoy los reclamos de garantía: en un portal de cada marca, en un sistema que exige la marca, por email?
+3. ¿Alguna marca obliga a usar su propio sistema o a enviarle datos con un formato determinado?
+4. ¿Atienden eléctricos o híbridos?
+5. ¿Hacen trabajos para concesionarias de esas marcas?
+
+---
+
 ## Resumen priorizado
 
 | # | Idea | Encontrada en | ¿Ya está en el diseño? | Etapa sugerida | Complejidad |
