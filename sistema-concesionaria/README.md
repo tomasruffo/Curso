@@ -6,6 +6,7 @@ Documento de diseño **v0.2**: lógica de negocio, arquitectura, seguridad, alta
 |---|---|
 | `README.md` | Este documento: cómo funciona el sistema y por qué está diseñado así |
 | [`propuestas-visuales/`](propuestas-visuales/) | **12 pantallas de diseño** (HTML): ingreso, tablero, agenda, orden, tablets, WhatsApp, stock, facturación, centro de control, historia del auto y listas de precios. Abrir `index.html` |
+| [`TECNOLOGIAS.md`](TECNOLOGIAS.md) | **Con qué construirlo**: TypeScript en todo (React + Fastify), PostgreSQL, Google Cloud, y qué lo hace rápido |
 | [`FLUJOS.md`](FLUJOS.md) | **Flujos de usuario**: los 19 que ya tenemos y los 18 que proponemos para una posventa oficial multimarca, con prioridad |
 | [`IDEAS-MERCADO.md`](IDEAS-MERCADO.md) | **Qué agregar**: 20 ideas de softwares de concesionarias y talleres, priorizadas por etapa y con fuentes |
 | [`PROCESO.md`](PROCESO.md) | **Historia clínica del auto**, unidad de trabajo (orden y tareas), cambios en la marcha, carga de stock y **listas de precios por marca** |
@@ -325,8 +326,8 @@ flowchart TB
 | Componente | Recomendación | Por qué |
 |---|---|---|
 | Base de datos | **Cloud SQL para PostgreSQL** en alta disponibilidad, región São Paulo, réplica en Santiago (el esquema ya se probó sin superusuario, como corre en Cloud SQL) | Las reglas viven en la base ([`schema.sql`](schema.sql)), failover automático y backups punto-en-el-tiempo |
-| API | Node.js (NestJS) o Python (FastAPI), **sin estado**, en **Cloud Run** con ≥ 2 instancias | Si cae una, la otra atiende |
-| Back-office | Web (React) con un componente de calendario (ej. FullCalendar) | Arrastrar y soltar turnos |
+| API | **Node.js + TypeScript (Fastify)**, **sin estado**, en **Cloud Run** con ≥ 2 instancias | Si cae una, la otra atiende. Detalle en [`TECNOLOGIAS.md`](TECNOLOGIAS.md) |
+| Back-office | **React + Vite + TypeScript**, con agenda propia de arrastrar y soltar | Las vistas por recurso de las librerías de calendario conocidas suelen ser de pago |
 | Tablets | **La misma web** instalada como app (PWA), responsive | Una sola base de código; funciona igual en un celular (plan de emergencia) |
 | Archivos | **Cloud Storage** con **versionado y retención bloqueada** para actas y facturas | Las actas no se pueden borrar ni pisar |
 | Tiempo real | WebSocket/SSE + recarga cada 60 s de respaldo | Dos caminos para que el aviso llegue |
