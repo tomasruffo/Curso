@@ -35,6 +35,7 @@ En [`variantes/`](variantes/index.html) están las dos pantallas principales (**
 | 08 | [Taller](variantes/08-taller.html) | Industrial y de alto contraste, pensada para el box |
 | 09 | [Champagne](variantes/09-champagne.html) | Lujo silencioso: negro cálido y dorado |
 | 10 | [Aurora](variantes/10-aurora.html) | Futuro eléctrico: violeta y turquesa |
+| **11** | [**Carbono**](variantes/11-carbono.html) | **Propuesta combinada**: los bloques de Bento con fibra de carbono, negro y azul deportivo, detalles rojos y degradados modernos. Tiene **modo oscuro y modo claro**; la barra lateral siempre es de carbono |
 
 En todas, la tablet es interactiva (tildar tareas, sacar fotos, registrar un hallazgo y terminar). En el celular, las pantallas se achican enteras para que se vea el diseño real.
 
