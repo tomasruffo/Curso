@@ -15,8 +15,13 @@
  * Knob 32 is a typical real instrument, 64 twice that; above 64 it grows
  * fast (a neglected instrument). Knobs at 0 leave the sound as stock.
  *
- * Integer only, no FPGA writes, no note handling: vintage_hooks.c only
- * changes the oscillator pitch stock already sends every 2 ms.
+ * How it reaches the sound (vintage_hooks.c): stock osc_pitch already adds a
+ * per-voice, per-oscillator term, diverge_amount[part] x diverge_rand[3v+o]
+ * >> 5. Once per tick the patch sets diverge_amount to 32 (the entry is then
+ * the offset itself, in 1/256 semitone) and drift_amount to 0 (stock's
+ * shared drift off), and writes the model's offsets into diverge_rand. No
+ * osc_pitch wrapper, no FPGA writes, no note handling; parts with both
+ * knobs at 0 are not touched at all.
  */
 #ifndef VINTAGE_H
 #define VINTAGE_H
@@ -67,20 +72,30 @@ struct vintage_voice {
 
 /* Settings (a Settings page later). All default to 0: patch RAM starts
  * zeroed and the patch builder refuses initialised data. */
-extern uint8_t vintage_off;          /* nonzero: every pitch exactly as without this patch */
+extern uint8_t vintage_off;          /* nonzero: stock table and amounts back, nothing touched */
 extern uint8_t vintage_profile;      /* VINTAGE_CEM3340 (0, default) or VINTAGE_SSM2030 */
 extern int8_t vintage_key_scale;     /* -128..127 = -1..+1; 0 = the model as is */
-extern uint32_t vintage_clamp_hits;  /* times a limit kicked in (tests expect 0) */
+extern uint32_t vintage_clamp_hits;  /* times the +-50 cent limit kicked in (tests expect 0) */
 
 void vintage_init(void);             /* draws the character; runs once */
-void vintage_tick(void);             /* once per 1 ms tick */
+
+/* Advances oscillator i's wander (0..47), its voice's temperature when
+ * i % 3 == 0, the whole synth's when i == 0. Run for one oscillator per
+ * tick in turn: each one every 48 ms. */
+void vintage_step(uint32_t i);
 
 /* Knob 0..127 -> amount, 32 = 1.0 (Q5): linear to 64, then steeper. */
 uint32_t vintage_amount(uint32_t knob);
 
-/* Offset in osc_pitch units for voice v, oscillator o, given the amounts
- * (vintage_amount) and the pitch stock computed without its own Diverge and
- * Drift. Counts and applies the +-50 cent limit. */
+/* The model's offset for oscillator i (3v + o) at this pitch (osc_pitch
+ * units), in cents Q8, the +-50 cent limit applied and counted. */
+int32_t vintage_cents_q8(uint32_t i, uint32_t div_amount, uint32_t drift_amount, int32_t pitch);
+
+/* The diverge_rand entry for that offset with diverge_amount 32:
+ * 1/256 semitone (0.39 cents), rounded, +-127. */
+int8_t vintage_entry(int32_t cents_q8);
+
+/* The same offset in osc_pitch units (4,096 per octave), for tests. */
 int32_t vintage_offset(uint32_t v, uint32_t o, uint32_t div_amount,
                        uint32_t drift_amount, int32_t pitch);
 
@@ -89,9 +104,11 @@ const struct vintage_osc *vintage_osc_state(uint32_t i);
 const struct vintage_voice *vintage_voice_state(uint32_t v);
 int32_t vintage_global_temp(void);
 
-/* The osc_pitch call the wrappers make once stock's own Diverge and Drift
- * are out of the way: vintage_inner_stock.c (osc_pitch) or
- * vintage_inner_mpe.c (the MPE patch's wrappers, so both work together). */
-void vintage_inner(uint8_t *osc, uint32_t part, int on_tick);
+/* Once per tick, after mod_tick's mod_update(1) and before its FPGA writes
+ * (vintage_hooks.c). The hook itself is vintage_mod_update, in
+ * vintage_inner_stock.c (calls mod_update) or vintage_inner_mpe.c (calls the
+ * MPE patch's mpe_mod_update), then this. */
+void vintage_after_tick(void);
+void vintage_mod_update(uint32_t part);
 
 #endif

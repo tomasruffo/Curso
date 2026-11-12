@@ -6,8 +6,10 @@
 #include <stdint.h>
 
 void osc_pitch(uint8_t *osc, uint32_t part);
+void mod_update(uint32_t part);
 extern volatile uint8_t multi_mode;
 extern volatile uint8_t voice_loop_index;
+extern volatile uint8_t voice_note[16];
 extern uint8_t patches[3][0x201];
 
 #endif

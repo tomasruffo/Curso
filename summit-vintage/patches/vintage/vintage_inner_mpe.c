@@ -1,17 +1,15 @@
-/* The inner call for MPE + vintage: the MPE patch's own osc_pitch wrappers
- * (patches/mpe/mpe_expr.c), so per-note bend and the rest of MPE work as
- * before and the vintage offset goes on top. The MPE files stay unchanged. */
+/* The tick hook for MPE + vintage: the MPE patch already hooks mod_tick's
+ * mod_update(1) call (0x0801457E) with mpe_mod_update (patches/mpe/
+ * mpe_slide.c). This takes that site and calls MPE's function first, so MPE
+ * works as before; the vintage work follows. The MPE files stay unchanged. */
 
 #include "firmware.h"
 #include "vintage.h"
 
-void mpe_osc_pitch_tick(uint8_t *osc, uint32_t part);
-void mpe_osc_pitch_alloc(uint8_t *osc, uint32_t part);
+void mpe_mod_update(uint32_t part);
 
-void vintage_inner(uint8_t *osc, uint32_t part, int on_tick)
+void vintage_mod_update(uint32_t part)
 {
-    if (on_tick)
-        mpe_osc_pitch_tick(osc, part);
-    else
-        mpe_osc_pitch_alloc(osc, part);
+    mpe_mod_update(part);
+    vintage_after_tick();
 }

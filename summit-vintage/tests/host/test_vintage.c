@@ -1,12 +1,14 @@
 /* Host tests for the vintage patch: the patch's own C (vintage_model.c,
- * vintage_hooks.c, vintage_inner_stock.c) against a stand-in osc_pitch that
- * follows the documented formula (gipfel_mpe docs/findings,
- * "The osc_pitch struct"):
+ * vintage_hooks.c, vintage_inner_stock.c) against a stand-in firmware that
+ * follows the documented code (gipfel_mpe docs/findings, "The osc_pitch
+ * struct", and osc_drift_update at 0x08013844):
  *
- *   sum = note + diverge_amount[p] * diverge_rand[3v + o] >> 5 + osc_drift[3p + o]
- *   out = (s16) sum * 0x5555 >> 14            (4,096 per octave)
+ *   osc_drift[3p + o] = (walk >> 23) x drift_amount[p] >> 7      every tick
+ *   sum = note + diverge_amount[p] x diverge_rand[3v + o] >> 5 + osc_drift[3p + o]
+ *   out = (s16) sum x 0x5555 >> 14                              (4,096 per octave)
  *
- * Build and run: tests/host/run.sh
+ * One tick: stock's drift update, osc_pitch for every voice and oscillator,
+ * then mod_update(1), which the patch hooks. Build and run: tests/host/run.sh
  */
 
 #include <math.h>
@@ -17,89 +19,93 @@
 #include "firmware.h"
 #include "../../patches/vintage/vintage.h"
 
-void vintage_osc_pitch_tick(uint8_t *osc, uint32_t part);
-void vintage_osc_pitch_alloc(uint8_t *osc, uint32_t part);
-
 /* ---- the stand-in firmware ------------------------------------------- */
 
 volatile uint8_t multi_mode;
 volatile uint8_t voice_loop_index;
+volatile uint8_t voice_note[16];
 uint8_t patches[3][0x201];
 uint8_t diverge_amount[2];
+uint16_t drift_amount[2];
 int8_t osc_drift[6];
-static int8_t diverge_rand[64];
+int8_t diverge_rand[48];
+_Alignas(8) uint8_t osc1_pitch[0xC + 64], osc2_pitch[0xC + 64], osc3_pitch[0xC + 64];
+static uint8_t *const OSC[3] = { osc1_pitch, osc2_pitch, osc3_pitch };
+static int8_t STOCK_TABLE[48];
 static int32_t note_sum[16];                 /* the note term, 8.8 semitones */
+static int32_t stock_walk[6];                /* stock's drift walk (osc_drift_update's state) */
+static int8_t table_played[48];              /* the table as this tick's osc_pitch read it */
+
+static int32_t to_out(int32_t sum) { return ((int32_t)(int16_t)sum * 0x5555) >> 14; }
 
 void osc_pitch(uint8_t *osc, uint32_t part)
 {
-    uint32_t v = voice_loop_index & 15, o = osc[0], p = part & 1;
-    int32_t sum = note_sum[v] + ((diverge_amount[p] * diverge_rand[(3 * v + o) & 63]) >> 5)
-                + osc_drift[(3 * p + o) % 6];
-    int32_t out = ((int32_t)(int16_t)sum * 0x5555) >> 14;
+    uint32_t v = voice_loop_index & 15, o = osc[0] % 3, p = part & 1;
+    int32_t sum = note_sum[v] + ((diverge_amount[p] * diverge_rand[3 * v + o]) >> 5) + osc_drift[3 * p + o];
+    int32_t out = to_out(sum);
     memcpy(osc + 0xC + 4 * v, &out, 4);
 }
 
-static _Alignas(4) uint8_t osc_mem[3][0xC + 64];
-static _Alignas(4) uint8_t ref_mem[3][0xC + 64];
+void mod_update(uint32_t part) { (void)part; }
 
-static int32_t out_of(uint8_t *mem, uint32_t v)
+static int32_t out_of(uint32_t v, uint32_t o)
 {
     int32_t x;
-    memcpy(&x, mem + 0xC + 4 * v, 4);
+    memcpy(&x, OSC[o] + 0xC + 4 * v, 4);
     return x;
 }
 
 static void set_note(uint32_t v, int midi)   /* C4 = 60: sum -1,983 */
 {
     note_sum[v] = -1983 + (midi - 60) * 256;
+    voice_note[v] = (uint8_t)midi;
 }
 
-static uint32_t part_of(uint32_t v)
-{
-    return multi_mode && v >= 8 ? 1 : 0;
-}
+static uint32_t part_of(uint32_t v) { return multi_mode && v >= 8 ? 1 : 0; }
 
-static void set_knobs(int which, int div, int drift)
+/* As a knob or NRPN does: the patch byte, then patch_apply_osc's amounts. */
+static void set_knobs(uint32_t part, int div, int drift)
 {
-    patches[which][0x2B] = (uint8_t)div;
-    patches[which][0x2C] = (uint8_t)drift;
+    patches[(multi_mode ? 1 : 0) + part][0x2B] = (uint8_t)div;
+    patches[(multi_mode ? 1 : 0) + part][0x2C] = (uint8_t)drift;
+    diverge_amount[part] = (uint8_t)div;
+    drift_amount[part] = (uint16_t)drift;
 }
 
 static unsigned stock_rng = 12345;
-static void stock_walk(void)                 /* stock's drift moves under us */
+static void stock_drift_update(void)         /* moves on its own, as on the synth */
 {
     for (int i = 0; i < 6; i++) {
         stock_rng = stock_rng * 1103515245u + 12345u;
-        osc_drift[i] = (int8_t)((stock_rng >> 16) % 41 - 20);
+        stock_walk[i] += ((int32_t)(stock_rng >> 1) - (1 << 30) - stock_walk[i]) >> 6;
+        osc_drift[i] = (int8_t)(((stock_walk[i] >> 23) * drift_amount[i / 3]) >> 7);
     }
 }
 
-/* One mod_tick: every voice, three oscillators. */
+/* One mod_tick. */
 static void tick(void)
 {
+    stock_drift_update();
     for (uint32_t v = 0; v < 16; v++) {
         voice_loop_index = (uint8_t)v;
         for (uint32_t o = 0; o < 3; o++)
-            vintage_osc_pitch_tick(osc_mem[o], part_of(v));
+            osc_pitch(OSC[o], part_of(v));
     }
+    memcpy(table_played, diverge_rand, 48);
+    vintage_mod_update(1);
 }
 
-/* What plain osc_pitch gives now (with or without stock's own terms). */
-static int32_t reference(uint32_t v, uint32_t o, int stock_terms)
+/* What stock would play now: its own table and its amounts from the knobs. */
+static int32_t stock_out(uint32_t v, uint32_t o)
 {
     uint32_t p = part_of(v);
-    uint8_t keep_div = diverge_amount[p];
-    int8_t keep_drift = osc_drift[3 * p + o];
-    if (!stock_terms) {
-        diverge_amount[p] = 0;
-        osc_drift[3 * p + o] = 0;
-    }
-    voice_loop_index = (uint8_t)v;
-    osc_pitch(ref_mem[o], p);
-    diverge_amount[p] = keep_div;
-    osc_drift[3 * p + o] = keep_drift;
-    return out_of(ref_mem[o], v);
+    const uint8_t *patch = patches[(multi_mode ? 1 : 0) + p];
+    int8_t drift = (int8_t)(((stock_walk[3 * p + o] >> 23) * patch[0x2C]) >> 7);
+    return to_out(note_sum[v] + ((patch[0x2B] * STOCK_TABLE[3 * v + o]) >> 5) + drift);
 }
+
+/* The pitch without any Diverge or Drift. */
+static int32_t clean_out(uint32_t v) { return to_out(note_sum[v]); }
 
 static double cents(int32_t units) { return units / 3.41333; }
 
@@ -120,101 +126,106 @@ static void reset_world(void)
 {
     multi_mode = 0;
     memset(patches, 0, sizeof patches);
+    diverge_amount[0] = diverge_amount[1] = 0;
+    drift_amount[0] = drift_amount[1] = 0;
     vintage_off = 0;
     vintage_profile = VINTAGE_CEM3340;
     vintage_key_scale = 0;
     vintage_clamp_hits = 0;
-    diverge_amount[0] = diverge_amount[1] = 50;
-    for (int i = 0; i < 64; i++)
-        diverge_rand[i] = (int8_t)((i * 7) % 23 - 11);   /* stock-like +-11 */
+    memcpy(diverge_rand, STOCK_TABLE, 48);
     for (uint32_t v = 0; v < 16; v++)
         set_note(v, 60);
     for (uint8_t o = 0; o < 3; o++)          /* +0: the oscillator index */
-        osc_mem[o][0] = ref_mem[o][0] = o;
+        OSC[o][0] = o;
+    tick();                                  /* settle: knobs 0, nothing applied */
 }
 
 /* ---- tests ------------------------------------------------------------ */
 
-/* Knobs at 0, or the patch off: every pitch exactly as plain osc_pitch,
- * stock's own Diverge and Drift included. */
+/* Knobs at 0: the patch touches nothing and every pitch is stock's. With
+ * the patch off, the same even with the knobs up, stock's Diverge and
+ * Drift included. */
 static void test_off_is_stock(void)
 {
     reset_world();
     long diff = 0;
     for (int t = 0; t < 2000; t++) {
-        stock_walk();
         for (uint32_t v = 0; v < 16; v++)
-            set_note(v, 36 + (int)((v * 5 + t) % 48));
+            set_note(v, 36 + (int)((v * 5 + t / 20) % 48));
         tick();
         for (uint32_t v = 0; v < 16; v++)
             for (uint32_t o = 0; o < 3; o++)
-                diff += out_of(osc_mem[o], v) != reference(v, o, 1);
+                diff += out_of(v, o) != stock_out(v, o);
     }
-    check(diff == 0, "Diverge 0 + Drift 0: identical to stock", " (%g of %g pitches differ)", (double)diff, 2000.0 * 48);
+    check(diff == 0 && !memcmp(diverge_rand, STOCK_TABLE, 48) && !diverge_amount[0] && !drift_amount[0],
+          "Diverge 0 + Drift 0: nothing touched, identical to stock", " (%g of %g pitches differ)", (double)diff, 2000.0 * 48);
 
-    set_knobs(0, 64, 64);
     vintage_off = 1;
+    set_knobs(0, 64, 100);
     diff = 0;
     for (int t = 0; t < 2000; t++) {
-        stock_walk();
         tick();
         for (uint32_t v = 0; v < 16; v++)
             for (uint32_t o = 0; o < 3; o++)
-                diff += out_of(osc_mem[o], v) != reference(v, o, 1);
+                diff += out_of(v, o) != stock_out(v, o);
     }
-    check(diff == 0, "patch switched off: identical to stock", " (%g of %g differ)", (double)diff, 2000.0 * 48);
+    check(diff == 0 && !memcmp(diverge_rand, STOCK_TABLE, 48), "patch switched off: identical to stock, knobs up",
+          " (%g of %g differ)", (double)diff, 2000.0 * 48);
 
-    /* An oscillator index we don't expect: plain call. */
+    /* On, then switched off at run time: stock's table and amounts come back. */
     vintage_off = 0;
-    static _Alignas(4) uint8_t odd[0xC + 64];
-    odd[0] = 5;
-    voice_loop_index = 3;
-    vintage_osc_pitch_tick(odd, 0);
-    int32_t got = out_of(odd, 3);
-    odd[0] = 5;
-    osc_pitch(odd, 0);
-    check(got == out_of(odd, 3), "unexpected oscillator index: plain call", NULL, 0, 0);
+    for (int t = 0; t < 50; t++)
+        tick();
+    int was_on = memcmp(diverge_rand, STOCK_TABLE, 48) != 0 && diverge_amount[0] == 32 && drift_amount[0] == 0;
+    vintage_off = 1;
+    tick();
+    check(was_on && !memcmp(diverge_rand, STOCK_TABLE, 48) && diverge_amount[0] == 64 && drift_amount[0] == 100,
+          "switched off while on: stock's table and amounts back", NULL, 0, 0);
 }
 
-/* With the knobs up, stock's own terms are out of the sum, put back after
- * the call, and the offset stays within +-50 cents. */
-static void test_stock_terms_replaced(void)
+/* Knobs up: stock's shared drift is off, each pitch is the note plus its own
+ * table entry, within +-50 cents. */
+static void test_model_through_the_table(void)
 {
     reset_world();
     set_knobs(0, 32, 32);
-    int restored = 1, in_range = 1, moved = 0;
-    for (int t = 0; t < 500; t++) {
-        stock_walk();
-        int8_t want[6];
-        memcpy(want, osc_drift, 6);
+    int amounts = 1, drift_off = 1, exact = 1, in_range = 1, moved = 0;
+    for (int t = 0; t < 1000; t++) {
         tick();
-        restored &= memcmp(want, osc_drift, 6) == 0 && diverge_amount[0] == 50;
+        if (t == 0)
+            continue;   /* this tick's osc_pitch ran before the patch saw the knobs */
+        amounts &= diverge_amount[0] == 32 && drift_amount[0] == 0;
+        for (int i = 0; i < 3; i++)
+            drift_off &= osc_drift[i] == 0;
         for (uint32_t v = 0; v < 16; v++)
             for (uint32_t o = 0; o < 3; o++) {
-                double c = cents(out_of(osc_mem[o], v) - reference(v, o, 0));
+                int32_t x = out_of(v, o);
+                exact &= x == to_out(note_sum[v] + table_played[3 * v + o]);
+                double c = cents(x - clean_out(v));
                 in_range &= fabs(c) <= 50.0;
                 moved += fabs(c) > 0.05;
             }
     }
-    check(restored, "stock's Diverge and Drift inputs put back after each call", NULL, 0, 0);
-    check(in_range, "offset within +-50 cents of stock without its own terms", NULL, 0, 0);
-    check(moved > 500 * 48 / 2, "the model moves the pitches", " (%g of %g moved)", (double)moved, 500.0 * 48);
+    check(amounts, "diverge_amount 32 and drift_amount 0 while on", NULL, 0, 0);
+    check(drift_off, "stock's shared drift is 0", NULL, 0, 0);
+    check(exact, "each pitch = note + its own table entry", NULL, 0, 0);
+    check(in_range, "offset within +-50 cents", NULL, 0, 0);
+    check(moved > 999 * 48 / 2, "the model moves the pitches", " (%g of %g moved)", (double)moved, 999.0 * 48);
 }
 
-/* Diverge: every one of the 16 voices has its own character (stock's
- * voices 8-15 copy 0-7). */
+/* Every one of the 16 voices has its own character (stock's voices 8-15
+ * copy 0-7), and the three oscillators of a voice differ. */
 static void test_voices_unique(void)
 {
     reset_world();
+    set_knobs(0, 32, 0);
     tick();
     int same = 0;
     for (uint32_t i = 0; i < 24; i++) {
         const struct vintage_osc *a = vintage_osc_state(i), *b = vintage_osc_state(i + 24);
         same += a->bias_u == b->bias_u || a->scale_u == b->scale_u || a->tempco_u == b->tempco_u;
     }
-    check(same == 0, "voices 9-16 have their own character, not a copy of 1-8", " (%g of %g oscillators share a value)", same, 24);
-
-    /* And the three oscillators of a voice differ from each other. */
+    check(same == 0, "voices 9-16 have their own character, not a copy of 1-8", " (%g of %g share a value)", same, 24);
     same = 0;
     for (uint32_t v = 0; v < 16; v++)
         for (uint32_t o = 1; o < 3; o++)
@@ -227,14 +238,14 @@ static void test_drift_independent(void)
 {
     reset_world();
     set_knobs(0, 0, 32);
-    enum { SECONDS = 300, EVERY = 20 };
+    enum { SECONDS = 600, EVERY = 50 };
     static double s[16][SECONDS * 1000 / EVERY];
     int n = 0;
     for (int t = 0; t < SECONDS * 1000; t++) {
         tick();
         if (t % EVERY == 0) {
             for (uint32_t v = 0; v < 16; v++)
-                s[v][n] = cents(out_of(osc_mem[0], v) - reference(v, 0, 0));
+                s[v][n] = cents(out_of(v, 0) - clean_out(v));
             n++;
         }
     }
@@ -268,12 +279,10 @@ static void test_drift_independent(void)
     check(corr_abs < 0.4, "voices move independently", " (mean |correlation| %.2f, want < %.1f)", corr_abs, 0.4);
 }
 
-/* The knobs scale the offset linearly up to 64; the octave dependence of
- * tracking and the flat top end; key scale. Deterministic: same state. */
+/* The model's shape, on its pure functions. */
 static void test_shape(void)
 {
     reset_world();
-    tick();
     int32_t c4 = VINTAGE_C4;
     int lin = 1;
     for (uint32_t i = 0; i < 48; i++) {
@@ -284,7 +293,6 @@ static void test_shape(void)
     check(lin, "knob 64 = twice knob 32", NULL, 0, 0);
     check(vintage_amount(127) > 8 * 32, "knob 127 = a neglected instrument (amount)", " (%.0f / 32 = %.1fx)", vintage_amount(127), vintage_amount(127) / 32.0);
 
-    /* Tracking: the spread of Diverge grows away from C4. */
     double sd4 = 0, sd7 = 0;
     for (uint32_t i = 0; i < 48; i++) {
         double a = cents(vintage_offset(i / 3, i % 3, 32, 0, c4));
@@ -294,10 +302,8 @@ static void test_shape(void)
     }
     check(sqrt(sd7) > 1.5 * sqrt(sd4), "Diverge spreads more three octaves up (tracking)", " (C4 %.2f c, C7 %.2f c rms)", sqrt(sd4), sqrt(sd7));
 
-    /* Flat top end near 8.4 kHz, averaged over the 48 oscillators. The
-     * offset at hi + the offset at the mirror note below C4 - 2 x the offset
-     * at C4 cancels the autotune residual and the (linear) tracking error and
-     * leaves the reset error, which is ~0 at the low note. */
+    /* Flat top end near 8.4 kHz: the offset at hi + at the mirror note
+     * below C4 - 2 x at C4 cancels the residual and the linear tracking. */
     int32_t hi = VINTAGE_C0 + (int32_t)(log2(8400.0 / 16.3516) * 4096);
     int32_t lo = 2 * c4 - hi;
     for (int prof = 0; prof < 2; prof++) {
@@ -313,7 +319,6 @@ static void test_shape(void)
     }
     vintage_profile = VINTAGE_CEM3340;
 
-    /* Key scale -1: an octave up halves the offset, an octave down doubles it. */
     int ok = 1;
     for (uint32_t i = 0; i < 48; i++) {
         int32_t up = c4 + 4096, down = c4 - 4096;
@@ -325,54 +330,68 @@ static void test_shape(void)
     }
     vintage_key_scale = 0;
     check(ok, "key scale -100%: half an octave up, double an octave down", NULL, 0, 0);
+
+    int round_ok = 1;
+    for (int32_t q8 = -VINTAGE_MAX_Q8; q8 <= VINTAGE_MAX_Q8; q8 += 7) {
+        int32_t want = q8 > 12700 ? 12700 : q8 < -12700 ? -12700 : q8;   /* +-127 = +-49.6 c */
+        round_ok &= abs(vintage_entry(q8) * 100 - want) <= 50;          /* within half a step (0.2 c) */
+    }
+    check(round_ok, "table entry = the offset in 1/256 semitone, rounded, +-127", NULL, 0, 0);
 }
 
-/* Multi mode: each part reads its own sound's knobs. */
+/* A new note gets its entries in the same tick, at the new note's pitch;
+ * knobs turned up give every entry at once. */
+static void test_new_note_and_start(void)
+{
+    reset_world();
+    for (uint32_t v = 0; v < 16; v++)
+        set_note(v, 36);
+    tick();
+    set_knobs(0, 64, 0);
+    tick();
+    int all = 1;
+    for (uint32_t i = 0; i < 48; i++)
+        all &= diverge_rand[i] == vintage_entry(vintage_cents_q8(i, 64, 0, out_of(i / 3, i % 3)));
+    check(all, "knobs turned up: every entry written in the first tick", NULL, 0, 0);
+
+    for (int t = 0; t < 10; t++)
+        tick();
+    set_note(5, 96);                          /* C2 -> C7 */
+    tick();
+    int ok = 1;
+    for (uint32_t o = 0; o < 3; o++) {
+        int8_t want = vintage_entry(vintage_cents_q8(15 + o, 64, 0, to_out(note_sum[5])));
+        ok &= abs(diverge_rand[15 + o] - want) <= 1;
+    }
+    check(ok, "a new note's entries follow in the same tick", NULL, 0, 0);
+}
+
+/* Multi mode: each part reads its own sound's knobs; Part A at 0 is not touched. */
 static void test_multi(void)
 {
     reset_world();
     multi_mode = 1;
-    set_knobs(1, 0, 0);     /* Part A: as stock */
-    set_knobs(2, 32, 32);   /* Part B: the model */
-    long a_diff = 0, b_diff = 0;
+    set_knobs(0, 0, 0);     /* Part A: as stock */
+    set_knobs(1, 32, 32);   /* Part B: the model */
+    long a_diff = 0, b_diff = 0, a_table = 0;
     for (int t = 0; t < 200; t++) {
-        stock_walk();
         tick();
         for (uint32_t v = 0; v < 16; v++)
             for (uint32_t o = 0; o < 3; o++) {
-                int d = out_of(osc_mem[o], v) != reference(v, o, 1);
-                if (v < 8)
+                int d = out_of(v, o) != stock_out(v, o);
+                if (v < 8) {
                     a_diff += d;
-                else
+                    a_table += diverge_rand[3 * v + o] != STOCK_TABLE[3 * v + o];
+                } else {
                     b_diff += d;
+                }
             }
     }
-    check(a_diff == 0, "Multi: Part A (knobs 0) plays as stock", " (%g differ)", (double)a_diff, 0);
+    check(a_diff == 0 && a_table == 0 && diverge_amount[0] == 0, "Multi: Part A (knobs 0) not touched, plays as stock", " (%g differ)", (double)a_diff, 0);
     check(b_diff > 200 * 24 / 2, "Multi: Part B (knobs 32) uses the model", " (%g of %g differ)", (double)b_diff, 200.0 * 24);
 }
 
-/* Note-on (voice_alloc) gives the same offset as the tick and doesn't
- * advance the wander. */
-static void test_alloc(void)
-{
-    reset_world();
-    set_knobs(0, 32, 32);
-    tick();
-    int32_t before = vintage_global_temp();
-    struct vintage_osc o0 = *vintage_osc_state(0);
-    voice_loop_index = 0;
-    vintage_osc_pitch_alloc(osc_mem[0], 0);
-    int32_t from_alloc = out_of(osc_mem[0], 0);
-    vintage_osc_pitch_alloc(osc_mem[0], 0);
-    check(memcmp(&o0, vintage_osc_state(0), sizeof o0) == 0 && before == vintage_global_temp(),
-          "note-on doesn't advance the wander", NULL, 0, 0);
-    voice_loop_index = 0;
-    vintage_osc_pitch_tick(osc_mem[0], 0);   /* v 0, o 0: also advances one tick */
-    check(abs(out_of(osc_mem[0], 0) - from_alloc) <= 1, "note-on pitch = tick pitch", NULL, 0, 0);
-}
-
-/* Limits: extreme settings stay within +-50 c and osc_pitch's range; at
- * normal settings, 30 minutes without a single limit. */
+/* Limits, and 30 minutes at normal settings. */
 static void test_limits_and_long_run(void)
 {
     reset_world();
@@ -384,10 +403,12 @@ static void test_limits_and_long_run(void)
         for (uint32_t v = 0; v < 16; v++)
             set_note(v, v & 1 ? 0 : 120);
         tick();
+        if (t == 0)
+            continue;
         for (uint32_t v = 0; v < 16; v++)
             for (uint32_t o = 0; o < 3; o++) {
-                int32_t x = out_of(osc_mem[o], v);
-                ok &= x >= -43691 && x <= 43689 && fabs(cents(x - reference(v, o, 0))) <= 50.1;
+                int32_t x = out_of(v, o);
+                ok &= x >= -43691 && x <= 43689 && fabs(cents(x - clean_out(v))) <= 50.0;
             }
     }
     check(ok, "extreme settings: within +-50 c and osc_pitch's range", " (limit used %g times, as expected%.0s)", vintage_clamp_hits, 0);
@@ -398,8 +419,9 @@ static void test_limits_and_long_run(void)
     int32_t gmax = 0, bmax = 0;
     long n = 0;
     for (int t = 0; t < 30 * 60 * 1000; t++) {
-        for (uint32_t v = 0; v < 16; v++)
-            set_note(v, 24 + (int)((v * 7 + t / 1000) % 72));   /* C1..B6, changing */
+        if (t % 1000 == 0)
+            for (uint32_t v = 0; v < 16; v++)
+                set_note(v, 24 + (int)((v * 7 + t / 1000) % 72));   /* C1..B6, a new note every second */
         tick();
         if (t % 100 == 0) {
             int32_t g = vintage_global_temp(), b = vintage_osc_state(t / 100 % 48)->band[0];
@@ -418,13 +440,18 @@ static void test_limits_and_long_run(void)
 
 int main(void)
 {
+    for (int i = 0; i < 48; i++)
+        STOCK_TABLE[i] = (int8_t)((i * 7) % 23 - 11);       /* stock-like +-11 */
+    for (int i = 0; i < 6; i++)
+        stock_walk[i] = (i - 3) * (1 << 28);
+    memcpy(diverge_rand, STOCK_TABLE, 48);
     test_off_is_stock();
-    test_stock_terms_replaced();
+    test_model_through_the_table();
     test_voices_unique();
     test_drift_independent();
     test_shape();
+    test_new_note_and_start();
     test_multi();
-    test_alloc();
     test_limits_and_long_run();
     printf("%s: %d failure(s)\n", failures ? "FAILED" : "PASSED", failures);
     return failures ? 1 : 0;

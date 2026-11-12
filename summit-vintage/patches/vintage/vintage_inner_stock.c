@@ -1,10 +1,11 @@
-/* The inner call for the vintage patch on its own: stock osc_pitch. */
+/* The tick hook for the vintage patch on its own: mod_tick's mod_update(1)
+ * call (0x0801457E), then the vintage work. */
 
 #include "firmware.h"
 #include "vintage.h"
 
-void vintage_inner(uint8_t *osc, uint32_t part, int on_tick)
+void vintage_mod_update(uint32_t part)
 {
-    (void)on_tick;
-    osc_pitch(osc, part);
+    mod_update(part);
+    vintage_after_tick();
 }

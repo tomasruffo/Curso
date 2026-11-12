@@ -15,13 +15,15 @@ fija y la deriva compartida del firmware original:
 
 Con Diverge y Drift en 0, un sonido queda exactamente como en el original.
 
-**Estado:** el código compila para el Summit y pasa 25 tests propios en la PC.
-**No** se armó todavía contra el firmware real, **no** se probó en el
-simulador de gipfel_mpe y **nunca** se instaló en un equipo. No lo instales
-hasta que pase esas pruebas.
+**Estado:** armado y verificado contra el firmware oficial 2.2. Pasa 28 tests
+en la PC, 11 en el simulador del Summit de gipfel_mpe, y los tests del propio
+MPE contra MPE + vintage (156 pasan; las 3 diferencias son la etiqueta de
+versión). No pierde ningún ciclo de modulación a la velocidad de procesador
+calibrada como la del Summit real. **Nunca** se instaló en un equipo: no lo
+instales todavía (ver "Próximos pasos" en [docs/modelo.md](docs/modelo.md)).
 
-El modelo, los números con sus fuentes, lo que es supuesto y la base para las
-mejoras siguientes están en [docs/modelo.md](docs/modelo.md).
+El modelo, los números con sus fuentes, cómo se aplica, las mediciones y la
+base para las mejoras siguientes están en [docs/modelo.md](docs/modelo.md).
 
 ## Archivos
 
@@ -29,12 +31,14 @@ mejoras siguientes están en [docs/modelo.md](docs/modelo.md).
 |---|---|
 | `patches/vintage/vintage.h` | Interfaz y estructuras del modelo |
 | `patches/vintage/vintage_model.c` | El modelo: carácter, deriva y desvío. No toca el firmware |
-| `patches/vintage/vintage_hooks.c` | El enganche en las 6 llamadas a `osc_pitch` |
-| `patches/vintage/vintage_inner_stock.c` | Llamada interna para usar el parche solo |
-| `patches/vintage/vintage_inner_mpe.c` | Llamada interna para usarlo junto al MPE |
+| `patches/vintage/vintage_hooks.c` | La tarea de cada milisegundo: escribe el modelo en la tabla de Diverge del firmware |
+| `patches/vintage/vintage_inner_stock.c` | El enganche para el parche solo (llama a `mod_update`) |
+| `patches/vintage/vintage_inner_mpe.c` | El enganche junto al MPE (llama a `mpe_mod_update`) |
 | `patches/vintage/patch.py` | Definición del parche solo (etiqueta `VNT1`) |
 | `patches/vintage/with_mpe.py` | Definición MPE + vintage (etiqueta `MPV1`) |
 | `tests/host/` | Tests en la PC y chequeo de compilación para el Summit |
+| `tests/sim/test_vintage.py` | Tests en el simulador de gipfel_mpe |
+| `tests/sim/vintage_as_mpe.py` | Plugin para correr los tests del MPE contra MPE + vintage |
 
 ## Cómo probarlo
 
@@ -51,9 +55,14 @@ Además, compilar para el Summit con los flags del proyecto (necesita
 GIPFEL=/ruta/a/gipfel_mpe tests/host/run.sh
 ```
 
-Para armarlo dentro de gipfel_mpe, copiar `patches/vintage` a
-`gipfel_mpe/patches/vintage` y usar sus herramientas, por ejemplo:
+En el simulador: copiar `patches/vintage` a `gipfel_mpe/patches/vintage` y
+`tests/sim/*.py` a `gipfel_mpe/tests/`, bajar el firmware oficial con
+`scripts/fetch-firmware.sh` y, desde la carpeta de gipfel_mpe:
 
 ```bash
-scripts/build-image.sh patches/vintage/with_mpe.py
+python3 -m pytest tests/test_vintage.py
+```
+
+```bash
+PYTHONPATH=tests:. python3 -m pytest -p vintage_as_mpe tests/test_mpe_*.py
 ```

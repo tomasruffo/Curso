@@ -4,11 +4,13 @@ The sound's Diverge and Drift knobs drive a model of real analog VCOs
 (Prophet-5 / OB-Xa class) instead of stock's fixed table and shared walk.
 With both knobs at 0 a sound plays exactly as stock.
 
-  bl hooks x6: osc_pitch calls in mod_tick and voice_alloc -> vintage wrappers
+  bl hook:     mod_tick's mod_update(1) -> vintage_mod_update: mod_update(1),
+               then once per tick the model's offsets into stock's own
+               per-voice table (diverge_rand), vintage_hooks.c
   byte patches: version labels "VNT1"
 
-For MPE and the model together use with_mpe.py instead: both patches hook
-the same six calls.
+For MPE and the model together use with_mpe.py instead: MPE hooks the same
+mod_update(1) call.
 """
 
 SOURCE = "summit-firmware-2.2-build2121.syx"
@@ -21,14 +23,10 @@ PATCHES = [
 
 SOURCES = ["vintage_model.c", "vintage_hooks.c", "vintage_inner_stock.c"]
 
-OSC_PITCH = 0x08013A2C
+MOD_UPDATE = 0x080140C4
 
-# (kind, site, expected original, patch symbol, why); sites from patches/mpe/patch.py
+# (kind, site, expected original, patch symbol, why); the site is the one
+# patches/mpe/patch.py hooks with mpe_mod_update.
 HOOKS = [
-    ("bl", 0x08014526, OSC_PITCH, "vintage_osc_pitch_tick", "mod_tick: osc_pitch(osc1)"),
-    ("bl", 0x08014530, OSC_PITCH, "vintage_osc_pitch_tick", "mod_tick: osc_pitch(osc2)"),
-    ("bl", 0x0801453A, OSC_PITCH, "vintage_osc_pitch_tick", "mod_tick: osc_pitch(osc3)"),
-    ("bl", 0x08016F66, OSC_PITCH, "vintage_osc_pitch_alloc", "voice_alloc: osc_pitch(osc1)"),
-    ("bl", 0x08016F72, OSC_PITCH, "vintage_osc_pitch_alloc", "voice_alloc: osc_pitch(osc2)"),
-    ("bl", 0x08016F7C, OSC_PITCH, "vintage_osc_pitch_alloc", "voice_alloc: osc_pitch(osc3)"),
+    ("bl", 0x0801457E, MOD_UPDATE, "vintage_mod_update", "mod_tick -> mod_update(1), last part update of the tick"),
 ]
