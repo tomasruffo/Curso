@@ -6,6 +6,7 @@ Documento de diseño **v0.2**: lógica de negocio, arquitectura, seguridad, alta
 |---|---|
 | `README.md` | Este documento: cómo funciona el sistema y por qué está diseñado así |
 | [`propuestas-visuales/`](propuestas-visuales/) | **12 pantallas de diseño** (HTML): ingreso, tablero, agenda, orden, tablets, WhatsApp, stock, facturación, centro de control, historia del auto y listas de precios. Abrir `index.html` |
+| [`IDEAS-MERCADO.md`](IDEAS-MERCADO.md) | **Qué agregar**: 20 ideas de softwares de concesionarias y talleres, priorizadas por etapa y con fuentes |
 | [`PROCESO.md`](PROCESO.md) | **Historia clínica del auto**, unidad de trabajo (orden y tareas), cambios en la marcha, carga de stock y **listas de precios por marca** |
 | [`ETAPAS.md`](ETAPAS.md) | **Etapa 1** (digitalización, carga manual, facturación manual asistida) y **etapa 2** (WhatsApp, facturación automática, stock inteligente) |
 | [`SEGURIDAD.md`](SEGURIDAD.md) | Ingreso ultra seguro (passkeys por rol), datos sensibles cifrados, quién ve qué, recuperación de cuentas |
