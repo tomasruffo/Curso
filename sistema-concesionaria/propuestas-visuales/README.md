@@ -1,6 +1,6 @@
 # Propuestas visuales
 
-Diez pantallas del sistema, con un diseño oscuro, preciso y centrado en el auto. **Abrí [`index.html`](index.html) en el navegador**: desde ahí se navega a todas, y también entre ellas (la barra lateral funciona).
+Doce pantallas del sistema, con un diseño oscuro, preciso y centrado en el auto. **Abrí [`index.html`](index.html) en el navegador**: desde ahí se navega a todas, y también entre ellas (la barra lateral funciona).
 
 Cada archivo es **autocontenido**: se puede abrir solo, sin instalar nada. Sólo usa las fuentes de Google Fonts, y si no cargan se ve igual con las del sistema.
 
@@ -16,6 +16,8 @@ Cada archivo es **autocontenido**: se puede abrir solo, sin instalar nada. Sólo
 | 08 | [Stock inteligente](08-stock.html) | Etapa 2: disponible real, proyección a 14 días y compra sugerida |
 | 09 | [Facturación](09-facturacion.html) | Etapa 1: manual asistida (copiar a ARCA, cargar el CAE, controles) |
 | 10 | [Centro de control](10-centro-control.html) | Plan de emergencia, conectividad, nube, equipos y registro de seguridad |
+| 11 | [Historia del auto](11-historia-vehiculo.html) | La historia clínica: visitas, km, hallazgos, lo instalado con serie y garantía, pendientes |
+| 12 | [Listas de precios](12-listas-precios.html) | **Interactiva**: el responsable de la marca confirma las variaciones grandes y recién ahí puede aprobar |
 
 ## Lenguaje visual
 
